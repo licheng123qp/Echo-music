@@ -1,8 +1,10 @@
-# Mineradio 声场版（Mineradio SoundField）
+# Mineradio 声场版（仓库：Echo music）
 
 > 基于 [Mineradio](https://github.com/XxHuberrr/Mineradio-paused) 安卓版前端重建的 **Android 工程**，并加入**领克 08 声场控制**：车型匹配、7.1.4 虚拟声场、左右/前后平衡、声场宽度、虚拟中置、10 段 EQ。
 >
 > **本项目是第三方衍生版，不是 Mineradio 官方版本。** 原项目版权归 [XxHuberrr](https://github.com/XxHuberrr) 所有，按 GPL-3.0 授权。
+>
+> 仓库：<https://github.com/licheng123qp/Echo-music> · 应用名：**Mineradio 声场版** · 包名：`com.mineradio.soundfield`
 
 ---
 
