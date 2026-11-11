@@ -127,6 +127,9 @@
       { value: 'high', label: '高' },
     ], 'data-quality');
 
+    dom.zoomInfo = el('div', { className: 'sf-note sf-zoom-info' }, '');
+    body.appendChild(dom.zoomInfo);
+
     dom.particlesRow = addChipRow('粒子效果', [
       { value: 'off', label: '关（省电）' },
       { value: 'on', label: '开' },
@@ -296,7 +299,8 @@
   function layoutRoot() {
     if (!dom.root) return;
     var m = viewportMetrics();
-    var scale = m.scale;
+    // 优先用页面自己算出的有效缩放：CSS zoom 兜底时 visualViewport.scale 不反映真实比例
+    var scale = (window.__mrVisualScale > 0) ? window.__mrVisualScale : m.scale;
     var screenWidth = m.width * scale; // 屏幕 CSS 宽（把布局像素换回肉眼像素）
     dom.root.style.left = m.left + 'px';
     dom.root.style.top = m.top + 'px';
@@ -311,6 +315,13 @@
     var tapPx = Math.min(56, Math.max(36, screenWidth * 0.022));
     dom.root.style.setProperty('--sf-fs', ((fontPx * zoom) / scale) + 'px');
     dom.root.style.setProperty('--sf-tap', ((tapPx * zoom) / scale) + 'px');
+    // 诊断行：车机上「改了没反应」时，这三个数能直接定位是 meta 没生效还是没存进去
+    if (dom.zoomInfo) {
+      dom.zoomInfo.textContent = '布局 ' + (window.__mrLayoutWidth || '?')
+        + ' · 视觉 ' + Math.round(zoom * 100) + '%'
+        + ' · 实际 ×' + scale.toFixed(2)
+        + (window.__mrZoomFallback ? ' · CSS 兜底' : '');
+    }
     // 可见视口宽高比 ≥ 1.45 视为横屏（领克 08 车机 16:10 = 1.6），面板改右侧抽屉
     dom.root.classList.toggle('sf-drawer', (m.width / Math.max(1, m.height)) >= 1.45);
   }

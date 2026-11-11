@@ -31,11 +31,25 @@
        *   也把 3D 画布的 drawing buffer 撑到 5200×3250（车机上渲染开销直接翻几倍）。
        * visualViewport 是唯一不受布局放大影响的尺寸来源。
        */
+      var DEVICE_CSS_WIDTH = 0;
+
+      /**
+       * 屏幕宽度（CSS 像素）。
+       * ★ 只在第一次调用时取一次并缓存。
+       *   不能每次都用 visualViewport.width * scale：部分 Android WebView 在 meta 生效后
+       *   会把这两项报成不同的组合，乘出来的值跟着布局宽一起变，变成「越重排越宽」的
+       *   自激循环 —— 表现就是改了缩放没反应、甚至界面反而变小。
+       *   首次调用发生在 meta 还是 device-width 的时候，此时 clientWidth 就是真实屏幕宽。
+       */
       function screenCssWidth() {
-        var vv = window.visualViewport;
-        if (vv && vv.width > 0 && vv.scale > 0) return vv.width * vv.scale;
+        if (DEVICE_CSS_WIDTH > 0) return DEVICE_CSS_WIDTH;
+        var w = document.documentElement.clientWidth || window.innerWidth || 0;
+        if (w > 0) {
+          DEVICE_CSS_WIDTH = w;
+          return w;
+        }
         var dpr = window.devicePixelRatio || 1;
-        var physical = (window.screen && window.screen.width) || window.innerWidth || 1;
+        var physical = (window.screen && window.screen.width) || 1;
         return Math.max(1, physical / dpr);
       }
 
@@ -55,6 +69,7 @@
         var layoutW = Math.round(screenW / SCALE);
         // 暴露给声场面板/自检脚本：布局宽与当前缩放，便于排查「面板为什么偏了」
         window.__mrLayoutWidth = layoutW;
+        // 有效视觉缩放：每 1 个布局像素对应多少屏幕像素（兜底路径下仍等于 SCALE）
         window.__mrVisualScale = SCALE;
         var meta = document.querySelector('meta[name="viewport"]');
         if (meta) {
@@ -98,6 +113,8 @@
         // 先把新比例落进 meta，重载后首帧就是正确比例，避免闪一下旧布局
         SCALE = BASE_SCALE * zoom;
         applyViewport();
+        // 留个标记：重载后弹一次提示，用户能确认「确实生效了」，也方便排查没重载的情况
+        try { sessionStorage.setItem('mineradio-ui-zoom-applied', String(zoom)); } catch (e) { }
         setTimeout(function () { location.reload(); }, 120);
       };
 
@@ -105,6 +122,39 @@
       window.__mrGetUiZoom = function () {
         return Math.round((SCALE / BASE_SCALE) * 1000) / 1000;
       };
+
+      // 缩放重载后给一次明确反馈
+      setTimeout(function () {
+        var applied = 0;
+        try { applied = Number(sessionStorage.getItem('mineradio-ui-zoom-applied')) || 0; } catch (e) { }
+        if (!applied) return;
+        try { sessionStorage.removeItem('mineradio-ui-zoom-applied'); } catch (e) { }
+        if (typeof window.showToast === 'function') {
+          window.showToast('界面缩放已应用：' + Math.round(applied * 100) + '%');
+        }
+      }, 2500);
+
+      /**
+       * 兜底：少数 WebView 不认动态改过的 viewport（宽度/初始缩放都没生效）。
+       * 判定方式不依赖 visualViewport.scale（它可能不上报），而是比较：
+       *   布局视口宽（documentElement.clientWidth） vs 可见宽（visualViewport.width）
+       * 正常生效时两者相等；没生效时页面比可见区域宽，比值就是需要补的缩放。
+       */
+      setTimeout(function () {
+        var vv = window.visualViewport;
+        if (!vv || !(vv.width > 0)) return;
+        var layoutW = document.documentElement.clientWidth || 0;
+        if (layoutW <= 0) return;
+        var visibleCss = vv.width;
+        if (visibleCss <= 0) return;
+        // 页面明显比可见区域宽 → meta 的 width 没被采纳，用 CSS zoom 收到可见宽
+        if (layoutW > visibleCss * 1.05) {
+          var factor = visibleCss / layoutW;
+          document.documentElement.style.zoom = String(factor);
+          window.__mrZoomFallback = true;
+          console.warn('[Viewport] meta 未生效，CSS zoom 兜底 ×' + factor.toFixed(3));
+        }
+      }, 1200);
     })();
   </script>
   <title>Mineradio</title>
