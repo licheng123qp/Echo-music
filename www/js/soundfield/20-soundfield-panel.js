@@ -178,21 +178,76 @@
     footActions.appendChild(dom.modeBtn);
     footActions.appendChild(dom.resetBtn);
     footer.appendChild(footActions);
-    body.appendChild(footer);
-
+    // 底部操作条挂在面板上而不是滚动区里：车机上滚到一半也能点到「恢复默认」
     dom.panel.appendChild(body);
+    dom.panel.appendChild(footer);
+    dom.root = rootNode;
     rootNode.appendChild(dom.backdrop);
     rootNode.appendChild(dom.panel);
     rootNode.appendChild(dom.launcher);
     document.body.appendChild(rootNode);
 
+    // 先按可见视口钉住根节点，再绑事件：否则面板会按 10000px 宽的布局视口居中，跑到屏幕外
+    layoutRoot();
     bindEvents();
     refresh(engine.getParams());
+  }
+
+  /**
+   * 读取可见视口。
+   * Mineradio 会把布局视口放大到「屏宽/0.38」，真机上可能被夹到 10000px，
+   * 所以只能用 visualViewport 拿「肉眼可见的那一块」，vw/vh 在这个页面里不可信。
+   */
+  function viewportMetrics() {
+    var vv = window.visualViewport;
+    if (vv && vv.width > 0) {
+      return {
+        left: vv.offsetLeft || 0,
+        top: vv.offsetTop || 0,
+        width: vv.width,
+        height: vv.height,
+        scale: vv.scale > 0 ? vv.scale : 1,
+      };
+    }
+    return {
+      left: 0,
+      top: 0,
+      width: window.innerWidth || 1,
+      height: window.innerHeight || 1,
+      scale: 1,
+    };
+  }
+
+  /**
+   * 把根节点钉在可见视口上，并按屏幕实际宽度换算「视觉像素」。
+   * --sf-k = 1 视觉像素对应的布局像素数（= 1/scale），CSS 里所有固定尺寸都乘它。
+   * 字号按屏幕宽度分档：2560 车机 18px、1280~1600 车机 16px、手机 15px。
+   */
+  function layoutRoot() {
+    if (!dom.root) return;
+    var m = viewportMetrics();
+    var scale = m.scale;
+    var screenWidth = m.width * scale; // 屏幕 CSS 宽（把布局像素换回肉眼像素）
+    dom.root.style.left = m.left + 'px';
+    dom.root.style.top = m.top + 'px';
+    dom.root.style.width = m.width + 'px';
+    dom.root.style.height = m.height + 'px';
+    dom.root.style.setProperty('--sf-k', String(1 / scale));
+    // 字号与触控高度按屏幕宽度分档：领克 08 车机 2560 宽 → 20px / 56px；
+    // 手机 393 宽 → 15px / 36px。车机上手指更远、屏幕更大，控件必须跟着变大。
+    var fontPx = Math.min(21, Math.max(15, screenWidth * 0.0078));
+    var tapPx = Math.min(56, Math.max(36, screenWidth * 0.022));
+    dom.root.style.setProperty('--sf-fs', (fontPx / scale) + 'px');
+    dom.root.style.setProperty('--sf-tap', (tapPx / scale) + 'px');
+    // 可见视口宽高比 ≥ 1.45 视为横屏（领克 08 车机 16:10 = 1.6），面板改右侧抽屉
+    dom.root.classList.toggle('sf-drawer', (m.width / Math.max(1, m.height)) >= 1.45);
   }
 
   /** 打开面板：先同步一次参数，避免显示的是上次的旧值。 */
   function open() {
     build();
+    // 每次打开都重算一次：车机可能在后台被旋转/分屏，账不能按打开时的尺寸算
+    layoutRoot();
     refresh(engine.getParams());
     dom.panel.classList.add('sf-show');
     dom.backdrop.classList.add('sf-show');
@@ -329,6 +384,14 @@
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && built && dom.panel.classList.contains('sf-show')) close();
     });
+
+    // 视口变化要跟着重钉：横竖屏切换、车机分屏、软键盘弹出都会改可见视口
+    window.addEventListener('resize', layoutRoot);
+    window.addEventListener('orientationchange', function () { setTimeout(layoutRoot, 150); });
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', layoutRoot);
+      window.visualViewport.addEventListener('scroll', layoutRoot);
+    }
   }
 
   /**

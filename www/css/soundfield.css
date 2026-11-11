@@ -1,27 +1,43 @@
 /* ============================================================
-   领克 08 声场控制面板样式
+   领克 08 声场控制面板样式（目标屏幕：2560×1600 16:10 横屏车机，同时兼容手机竖屏）
    ------------------------------------------------------------
    设计语言跟随 Mineradio：深色玻璃、青色强调（#00f5d4）、大圆角。
-   尺寸单位用 --sf-u（≈ 屏幕短边 1%）：页面本身做过整体 viewport 缩放，
-   固定 px 在不同车机屏上会一大一小；用短边比例才能横竖屏都点得准。
+
+   ★ 尺寸体系（重要，别改回 vw/vh）
+   Mineradio 的 index.html 会把布局视口设成「屏宽 / 0.38」再用 initial-scale=0.38 缩回，
+   实测布局视口会被 Chrome 夹到 10000px 宽，肉眼可见的却只有约 1000~2500px。
+   所以：
+     · 不能用 vw/vh —— 它们按布局视口算，面板会被放大几倍并跑到屏幕外；
+     · position: fixed 的 left/top 百分比同样按布局视口算，不能用。
+   这里改成：根节点由 JS 按 visualViewport 的 offset/size 定位，
+   面板内部用 absolute 相对根节点定位，尺寸用两个 JS 写入的变量：
+     --sf-k   1 个「视觉像素」等于多少布局像素（= 1 / visualViewport.scale）
+     --sf-fs  正文字号（已经是布局像素，JS 按屏幕实际宽度在 15~19 视觉像素间取值）
    ============================================================ */
 
 .sf-root {
-    /* 短边单位：竖屏取 1vw，横屏（车机）取 2.2vh，两者取小 */
-    --sf-u: min(1vw, 2.2vh);
+    --sf-k: 1;
+    --sf-fs: 15px;
+    --sf-tap: 36px;   /* 触控高度（布局像素，JS 按屏幕宽度写入 36~56） */
     --sf-accent: #00f5d4;
     --sf-accent-soft: rgba(0, 245, 212, .14);
     --sf-panel-bg: linear-gradient(150deg, rgba(22, 26, 30, .96), rgba(8, 11, 13, .98));
     position: fixed;
-    inset: 0;
+    /* left/top/width/height 由 JS 按 visualViewport 写入，这里只是兜底 */
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
     z-index: 2147483000;
     pointer-events: none;
+    overflow: hidden;
     font-family: "Noto Sans SC", "PingFang SC", "HarmonyOS Sans SC", system-ui, sans-serif;
     color: #e8ecef;
     -webkit-tap-highlight-color: transparent;
+    contain: layout style;
 }
 
-/* 所有可点区域都恢复 pointer-events：根节点本身必须穿透，否则会挡住播放器 */
+/* 可交互元素恢复 pointer-events：根节点必须穿透，否则会挡住播放器 */
 .sf-root button,
 .sf-root input,
 .sf-root select,
@@ -32,21 +48,21 @@
 
 /* ── 悬浮入口 ─────────────────────────────────────────────── */
 .sf-launcher {
-    position: fixed;
-    right: calc(var(--sf-u) * 2.2);
-    bottom: calc(var(--sf-u) * 12);
-    width: calc(var(--sf-u) * 11);
-    height: calc(var(--sf-u) * 11);
+    position: absolute;
+    right: calc(var(--sf-k) * 16px);
+    bottom: calc(var(--sf-k) * 104px);
+    width: calc(var(--sf-tap) * 1.15);
+    height: calc(var(--sf-tap) * 1.15);
     border-radius: 50%;
-    border: 1px solid rgba(0, 245, 212, .42);
+    border: calc(var(--sf-k) * 1px) solid rgba(0, 245, 212, .42);
     background: radial-gradient(circle at 32% 28%, rgba(0, 245, 212, .26), rgba(10, 14, 16, .92) 62%);
     color: #dffaf4;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: calc(var(--sf-u) * .2);
-    font-size: calc(var(--sf-u) * 1.35);
+    gap: calc(var(--sf-k) * 2px);
+    font-size: calc(var(--sf-k) * 11px);
     letter-spacing: .06em;
     box-shadow: 0 8px 28px rgba(0, 0, 0, .45), 0 0 18px rgba(0, 245, 212, .16);
     transition: transform .18s ease, opacity .18s ease;
@@ -65,7 +81,7 @@
 
 /* ── 遮罩 ─────────────────────────────────────────────────── */
 .sf-backdrop {
-    position: fixed;
+    position: absolute;
     inset: 0;
     background: rgba(0, 0, 0, .58);
     backdrop-filter: blur(6px);
@@ -82,23 +98,23 @@
 
 /* ── 面板主体 ─────────────────────────────────────────────── */
 .sf-panel {
-    position: fixed;
+    position: absolute;
     left: 50%;
     top: 50%;
-    width: calc(var(--sf-u) * 88);
-    max-width: calc(var(--sf-u) * 130);
-    max-height: 86vh;
+    width: min(92%, calc(var(--sf-k) * 460px));
+    max-height: 88%;
     transform: translate(-50%, -48%) scale(.97);
     opacity: 0;
     pointer-events: none;
     display: flex;
     flex-direction: column;
     background: var(--sf-panel-bg);
-    border: 1px solid rgba(255, 255, 255, .09);
-    border-radius: calc(var(--sf-u) * 2.6);
+    border: calc(var(--sf-k) * 1px) solid rgba(255, 255, 255, .09);
+    border-radius: calc(var(--sf-k) * 22px);
     box-shadow: 0 32px 90px rgba(0, 0, 0, .62), inset 0 1px 0 rgba(255, 255, 255, .07);
     transition: opacity .2s ease, transform .2s ease;
     overflow: hidden;
+    font-size: var(--sf-fs);
 }
 
 .sf-panel.sf-show {
@@ -107,26 +123,45 @@
     pointer-events: auto;
 }
 
+/* 横屏（16:10 车机）：面板改成右侧抽屉，别挡住歌词和封面。
+   类名由 JS 按「可见视口比例」挂，不依赖媒体查询——布局视口被放大后媒体查询不可信。 */
+.sf-root.sf-drawer .sf-panel {
+    left: auto;
+    right: calc(var(--sf-k) * 20px);
+    top: 50%;
+    width: min(46%, calc(var(--sf-k) * 620px));
+    max-height: 90%;
+    transform: translate(0, -46%) scale(.97);
+}
+
+.sf-root.sf-drawer .sf-panel.sf-show {
+    transform: translate(0, -50%) scale(1);
+}
+
+.sf-root.sf-drawer .sf-launcher {
+    bottom: calc(var(--sf-k) * 80px);
+}
+
 /* ── 头部 ─────────────────────────────────────────────────── */
 .sf-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: calc(var(--sf-u) * 1.6);
-    padding: calc(var(--sf-u) * 2.4) calc(var(--sf-u) * 2.8) calc(var(--sf-u) * 1.6);
-    border-bottom: 1px solid rgba(255, 255, 255, .07);
+    gap: calc(var(--sf-k) * 12px);
+    padding: calc(var(--sf-k) * 18px) calc(var(--sf-k) * 20px) calc(var(--sf-k) * 12px);
+    border-bottom: calc(var(--sf-k) * 1px) solid rgba(255, 255, 255, .07);
     background: linear-gradient(180deg, rgba(0, 245, 212, .05), transparent);
 }
 
 .sf-title {
-    font-size: calc(var(--sf-u) * 2.1);
+    font-size: calc(var(--sf-fs) * 1.4);
     font-weight: 600;
     letter-spacing: .04em;
 }
 
 .sf-subtitle {
-    margin-top: calc(var(--sf-u) * .45);
-    font-size: calc(var(--sf-u) * 1.3);
+    margin-top: calc(var(--sf-k) * 3px);
+    font-size: calc(var(--sf-fs) * .82);
     color: rgba(214, 240, 236, .62);
     letter-spacing: .05em;
 }
@@ -134,21 +169,21 @@
 .sf-head-actions {
     display: flex;
     align-items: center;
-    gap: calc(var(--sf-u) * 1.1);
+    gap: calc(var(--sf-k) * 8px);
 }
 
 .sf-power {
-    height: calc(var(--sf-u) * 3.4);
-    padding: 0 calc(var(--sf-u) * 1.6);
+    height: calc(var(--sf-tap) * .72);
+    padding: 0 calc(var(--sf-k) * 14px);
     border-radius: 999px;
-    border: 1px solid rgba(0, 245, 212, .45);
+    border: calc(var(--sf-k) * 1px) solid rgba(0, 245, 212, .45);
     background: var(--sf-accent-soft);
     color: var(--sf-accent);
-    font-size: calc(var(--sf-u) * 1.3);
+    font-size: calc(var(--sf-fs) * .82);
     letter-spacing: .05em;
 }
 
-/* 关闭态用低饱和灰，避免「已关闭」还发青色光让人以为开着 */
+/* 关闭态用低饱和灰，避免「已关闭」还发青光让人以为开着 */
 .sf-power.sf-off {
     border-color: rgba(255, 255, 255, .16);
     background: rgba(255, 255, 255, .05);
@@ -156,28 +191,29 @@
 }
 
 .sf-close {
-    width: calc(var(--sf-u) * 3.6);
-    height: calc(var(--sf-u) * 3.6);
+    width: calc(var(--sf-tap) * .9);
+    height: calc(var(--sf-tap) * .9);
     border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, .12);
+    border: calc(var(--sf-k) * 1px) solid rgba(255, 255, 255, .12);
     background: rgba(255, 255, 255, .04);
     color: rgba(255, 255, 255, .72);
-    font-size: calc(var(--sf-u) * 2);
+    font-size: calc(var(--sf-k) * 20px);
     line-height: 1;
 }
 
 /* ── 内容区 ───────────────────────────────────────────────── */
 .sf-body {
-    padding: calc(var(--sf-u) * 1.8) calc(var(--sf-u) * 2.8) calc(var(--sf-u) * 2.6);
+    padding: calc(var(--sf-k) * 14px) calc(var(--sf-k) * 20px) calc(var(--sf-k) * 18px);
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: calc(var(--sf-u) * 1.1);
+    gap: calc(var(--sf-k) * 8px);
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
 }
 
 .sf-section-label {
-    font-size: calc(var(--sf-u) * 1.15);
+    font-size: calc(var(--sf-fs) * .72);
     letter-spacing: .16em;
     color: rgba(255, 255, 255, .38);
     text-transform: uppercase;
@@ -187,24 +223,24 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-top: calc(var(--sf-u) * .6);
+    margin-top: calc(var(--sf-k) * 5px);
 }
 
 .sf-note {
-    font-size: calc(var(--sf-u) * 1.12);
+    font-size: calc(var(--sf-fs) * .74);
     line-height: 1.6;
     color: rgba(200, 224, 220, .5);
 }
 
 .sf-select {
     width: 100%;
-    height: calc(var(--sf-u) * 4.2);
-    padding: 0 calc(var(--sf-u) * 1.4);
-    border-radius: calc(var(--sf-u) * 1);
-    border: 1px solid rgba(255, 255, 255, .12);
+    height: var(--sf-tap);
+    padding: 0 calc(var(--sf-k) * 12px);
+    border-radius: calc(var(--sf-k) * 10px);
+    border: calc(var(--sf-k) * 1px) solid rgba(255, 255, 255, .12);
     background: rgba(255, 255, 255, .05);
     color: #e8ecef;
-    font-size: calc(var(--sf-u) * 1.4);
+    font-size: calc(var(--sf-fs) * .9);
     appearance: none;
 }
 
@@ -212,17 +248,17 @@
 .sf-chips {
     display: flex;
     flex-wrap: wrap;
-    gap: calc(var(--sf-u) * .8);
+    gap: calc(var(--sf-k) * 7px);
 }
 
 .sf-chip {
-    height: max(calc(var(--sf-u) * 3.8), 34px);
-    padding: 0 calc(var(--sf-u) * 1.4);
+    height: var(--sf-tap);
+    padding: 0 calc(var(--sf-k) * 13px);
     border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, .12);
+    border: calc(var(--sf-k) * 1px) solid rgba(255, 255, 255, .12);
     background: rgba(255, 255, 255, .035);
     color: rgba(255, 255, 255, .72);
-    font-size: calc(var(--sf-u) * 1.25);
+    font-size: calc(var(--sf-fs) * .8);
     transition: background .16s ease, border-color .16s ease, color .16s ease;
 }
 
@@ -233,16 +269,16 @@
 }
 
 .sf-chips-sm .sf-chip {
-    height: calc(var(--sf-u) * 3);
-    font-size: calc(var(--sf-u) * 1.15);
+    height: calc(var(--sf-tap) * .82);
+    font-size: calc(var(--sf-fs) * .74);
 }
 
 /* ── 滑杆行 ───────────────────────────────────────────────── */
 .sf-row {
     display: flex;
     flex-direction: column;
-    gap: calc(var(--sf-u) * .35);
-    margin-top: calc(var(--sf-u) * .5);
+    gap: calc(var(--sf-k) * 2px);
+    margin-top: calc(var(--sf-k) * 4px);
 }
 
 .sf-row-head {
@@ -252,12 +288,12 @@
 }
 
 .sf-row-label {
-    font-size: calc(var(--sf-u) * 1.4);
+    font-size: calc(var(--sf-fs) * .9);
     color: rgba(255, 255, 255, .86);
 }
 
 .sf-row-value {
-    font-size: calc(var(--sf-u) * 1.25);
+    font-size: calc(var(--sf-fs) * .8);
     color: var(--sf-accent);
     font-variant-numeric: tabular-nums;
 }
@@ -265,46 +301,45 @@
 .sf-row-scale {
     display: flex;
     justify-content: space-between;
-    font-size: calc(var(--sf-u) * 1);
+    font-size: calc(var(--sf-fs) * .66);
     color: rgba(255, 255, 255, .28);
 }
 
-/* range 自绘：WebView 默认样式在深底上几乎看不见轨道 */
+/* range 自绘：WebView 默认轨道在深底上几乎看不见；34 视觉像素高保证手指点得准 */
 .sf-range {
     -webkit-appearance: none;
     appearance: none;
     width: 100%;
-    /* 下限 30px：720 宽的小屏上 2.6u 只有 19px，拇指点不准 */
-    height: max(calc(var(--sf-u) * 3), 30px);
+    height: var(--sf-tap);
     background: transparent;
 }
 
 .sf-range::-webkit-slider-runnable-track {
-    height: calc(var(--sf-u) * .55);
+    height: calc(var(--sf-k) * 5px);
     border-radius: 999px;
     background: linear-gradient(90deg, rgba(0, 245, 212, .42), rgba(255, 255, 255, .12));
 }
 
 .sf-range::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: max(calc(var(--sf-u) * 2.2), 22px);
-    height: max(calc(var(--sf-u) * 2.2), 22px);
-    margin-top: max(calc(var(--sf-u) * -.85), -10px);
+    width: calc(var(--sf-k) * 22px);
+    height: calc(var(--sf-k) * 22px);
+    margin-top: calc(var(--sf-k) * -8.5px);
     border-radius: 50%;
     background: #f2fffd;
-    border: 2px solid rgba(0, 245, 212, .85);
+    border: calc(var(--sf-k) * 2px) solid rgba(0, 245, 212, .85);
     box-shadow: 0 0 12px rgba(0, 245, 212, .45);
 }
 
 /* ── EQ ───────────────────────────────────────────────────── */
 .sf-mini-toggle {
-    height: max(calc(var(--sf-u) * 3.2), 30px);
-    padding: 0 calc(var(--sf-u) * 1.2);
+    height: calc(var(--sf-tap) * .72);
+    padding: 0 calc(var(--sf-k) * 11px);
     border-radius: 999px;
-    border: 1px solid rgba(0, 245, 212, .4);
+    border: calc(var(--sf-k) * 1px) solid rgba(0, 245, 212, .4);
     background: var(--sf-accent-soft);
     color: var(--sf-accent);
-    font-size: calc(var(--sf-u) * 1.1);
+    font-size: calc(var(--sf-fs) * .7);
 }
 
 .sf-mini-toggle.sf-off {
@@ -316,27 +351,27 @@
 .sf-eq-grid {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: calc(var(--sf-u) * .9);
-    margin-top: calc(var(--sf-u) * .6);
+    gap: calc(var(--sf-k) * 6px);
+    margin-top: calc(var(--sf-k) * 4px);
 }
 
 .sf-eq-cell {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: calc(var(--sf-u) * .25);
-    padding: calc(var(--sf-u) * .6) 0;
-    border-radius: calc(var(--sf-u) * .8);
+    gap: calc(var(--sf-k) * 2px);
+    padding: calc(var(--sf-k) * 6px) 0;
+    border-radius: calc(var(--sf-k) * 8px);
     background: rgba(255, 255, 255, .025);
 }
 
 .sf-eq-freq {
-    font-size: calc(var(--sf-u) * 1);
+    font-size: calc(var(--sf-fs) * .66);
     color: rgba(255, 255, 255, .4);
 }
 
 .sf-eq-value {
-    font-size: calc(var(--sf-u) * 1);
+    font-size: calc(var(--sf-fs) * .66);
     color: rgba(0, 245, 212, .85);
     font-variant-numeric: tabular-nums;
 }
@@ -345,21 +380,21 @@
 .sf-range-eq {
     writing-mode: vertical-lr;
     direction: rtl;
-    width: calc(var(--sf-u) * 2.2);
-    height: calc(var(--sf-u) * 8);
+    width: calc(var(--sf-k) * 28px);
+    height: calc(var(--sf-k) * 108px);
 }
 
 .sf-range-eq::-webkit-slider-runnable-track {
-    width: calc(var(--sf-u) * .45);
+    width: calc(var(--sf-k) * 5px);
     height: 100%;
     background: linear-gradient(180deg, rgba(0, 245, 212, .42), rgba(255, 255, 255, .12));
 }
 
 .sf-range-eq::-webkit-slider-thumb {
-    width: calc(var(--sf-u) * 1.9);
-    height: calc(var(--sf-u) * 1.9);
+    width: calc(var(--sf-k) * 20px);
+    height: calc(var(--sf-k) * 20px);
     margin-top: 0;
-    margin-left: calc(var(--sf-u) * -.72);
+    margin-left: calc(var(--sf-k) * -7.5px);
 }
 
 /* ── 底部 ─────────────────────────────────────────────────── */
@@ -367,51 +402,31 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: calc(var(--sf-u) * 1.2);
-    margin-top: calc(var(--sf-u) * 1.4);
-    padding-top: calc(var(--sf-u) * 1.4);
-    border-top: 1px solid rgba(255, 255, 255, .07);
+    gap: calc(var(--sf-k) * 10px);
+    flex-shrink: 0;
+    padding: calc(var(--sf-k) * 12px) calc(var(--sf-k) * 20px) calc(var(--sf-k) * 16px);
+    border-top: calc(var(--sf-k) * 1px) solid rgba(255, 255, 255, .07);
+    background: rgba(8, 11, 13, .92);
 }
 
 .sf-status {
-    font-size: calc(var(--sf-u) * 1.05);
+    font-size: calc(var(--sf-fs) * .68);
     color: rgba(255, 255, 255, .38);
     line-height: 1.5;
 }
 
 .sf-foot-actions {
     display: flex;
-    gap: calc(var(--sf-u) * .8);
+    gap: calc(var(--sf-k) * 6px);
     flex-shrink: 0;
 }
 
 .sf-ghost-btn {
-    height: max(calc(var(--sf-u) * 3.4), 32px);
-    padding: 0 calc(var(--sf-u) * 1.3);
+    height: calc(var(--sf-tap) * .82);
+    padding: 0 calc(var(--sf-k) * 12px);
     border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, .14);
+    border: calc(var(--sf-k) * 1px) solid rgba(255, 255, 255, .14);
     background: transparent;
     color: rgba(255, 255, 255, .68);
-    font-size: calc(var(--sf-u) * 1.1);
-}
-
-/* ── 车机横屏：面板改成右侧抽屉，别挡住歌词和封面 ────────── */
-@media (min-aspect-ratio: 16/10) {
-    .sf-panel {
-        left: auto;
-        right: calc(var(--sf-u) * 2.4);
-        top: 50%;
-        transform: translate(0, -46%) scale(.97);
-        width: calc(var(--sf-u) * 66);
-        max-width: 34vw;
-        max-height: 92vh;
-    }
-
-    .sf-panel.sf-show {
-        transform: translate(0, -50%) scale(1);
-    }
-
-    .sf-launcher {
-        bottom: calc(var(--sf-u) * 8);
-    }
+    font-size: calc(var(--sf-fs) * .72);
 }

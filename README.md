@@ -40,7 +40,41 @@ input → preGain → 左右分离 → 10 段 EQ（每声道独立）→ 平衡�
 
 细节与参数推导见 [`docs/soundfield-design.md`](docs/soundfield-design.md)。
 
-## 3. 构建
+## 3. 分辨率适配（领克 08 车机 2560×1600 16:10）
+
+车机中控是 **2560×1600 横屏**，而 Mineradio 的 `index.html` 会把布局视口放大到「屏宽 / 0.38」再用
+`initial-scale=0.38` 缩回，实测在 WebView 里：
+
+| 指标 | 实测值 |
+| --- | --- |
+| `document.documentElement.clientWidth` | **10000**（被 Chrome 夹到上限） |
+| `visualViewport.width × scale` | 6736.8 × **0.38** |
+| 肉眼可见区域 | 2560 × 1600 |
+
+也就是说 **`vw/vh` 是按 10000 算的，比可见区域大 2.6~9.7 倍**；`position: fixed` 的百分比同样按布局视口算。
+所以常见的 `width: 80vw; left: 50%` 写法在这个页面里会把面板放大并推到屏幕外。
+
+本项目的做法：
+
+1. **按可见视口定位**：根节点用 `visualViewport.offset/width/height` 写到 inline style，面板内部用 `position: absolute` 相对根节点定位；
+2. **视觉像素换算**：`--sf-k = 1 / visualViewport.scale`，CSS 里所有固定尺寸都写成 `calc(var(--sf-k) * Npx)`，保证 N 就是肉眼看到的像素数；
+3. **触控尺寸随屏幕走**：`--sf-tap` 由 JS 按屏幕 CSS 宽度取 `clamp(36, 宽度×0.022, 56)`，`--sf-fs` 取 `clamp(15, 宽度×0.0078, 21)`；
+4. **横屏抽屉**：可见视口宽高比 ≥ 1.45 时挂 `sf-drawer` 类，面板变成右侧抽屉（领克 08 的 16:10 会命中）；
+5. **底部操作条不随内容滚动**：`恢复默认 / 状态` 固定在面板底部，滚到一半也能点。
+
+实测结果（headless Chromium + CDP 设备模拟，`tests/cdp-layout-audit.js`）：
+
+| 屏幕 | 布局 | 面板尺寸 | 预设按钮 | 滑杆触控高 | 越界 |
+| --- | --- | --- | --- | --- | --- |
+| 2560×1600（领克 08 车机） | 右侧抽屉 | 620×1440 | 59×56 | 56 | 无 |
+| 1920×720 | 右侧抽屉 | 601×629 | 50×41 | 41 | 无 |
+| 1280×800 | 右侧抽屉 | 571×698 | 50×35 | 35 | 无 |
+| 393×873（手机竖屏） | 居中卡片 | 351×745 | 50×35 | 35 | 无 |
+
+> 复跑：`node tests/cdp-layout-audit.js http://127.0.0.1:8765/index.html 2560 1600 1`
+> （需要先 `python3 -m http.server 8765` 起静态服务，并让 headless Chromium 监听 9222 端口）。
+
+## 4. 构建
 
 环境：JDK 17、Android SDK（compileSdk 34 / build-tools 34.0.0）、Node.js 18+。
 
@@ -68,7 +102,7 @@ keytool -genkeypair -v -keystore mineradio-soundfield.jks -alias mineradio \
 
 > 官方包与本包的签名不同，**不能覆盖安装**，需先卸载官方版（会丢官方版的本地设置）。
 
-## 4. 目录结构
+## 5. 目录结构
 
 ```
 www/                         Mineradio 安卓版 Web 前端（来自官方 APK v2.2.0）
@@ -84,7 +118,7 @@ tests/soundfield-engine-test.js     声场引擎离线自检（假 AudioContext�
 docs/                       设计文档
 ```
 
-## 5. 与原版安卓包的差异（重要）
+## 6. 与原版安卓包的差异（重要）
 
 | 项 | 状态 |
 | --- | --- |
@@ -94,13 +128,14 @@ docs/                       设计文档
 | 扫码登录 Cookie | 保存在原生进程内存，**重启应用后需重新登录** |
 | 官方版升级通道 | 不适用，本包不跟随官方版本号 |
 
-## 6. 已知限制
+## 7. 已知限制
 
 - 声场输出最终仍是立体声。车机若通过 HAL 自行上混，实际听感会叠加一次车机处理，建议对照「2.0 纯直通」调参。
 - HRTF 模式在低端车机上可能掉帧/爆音，默认使用等功率声像。
 - 声场链只在播放器建立音频图时挂载；如果出现「拖滑杆没反应」，先确认正在播放（面板底部会显示挂载状态）。
+- 面板强制按 `visualViewport` 布局，因此**不支持系统级「网页缩放」之外的手动捏合缩放**；车机上的 `maximum-scale=0.38` 也决定了这一点。
 
-## 7. 版权与许可
+## 8. 版权与许可
 
 - 本项目代码以 **GPL-3.0** 发布，见 [LICENSE](LICENSE)。
 - Mineradio 前端与品牌归原作者 **XxHuberrr** 所有（GPL-3.0）；本仓库是非官方衍生版，不代表原作者。
