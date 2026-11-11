@@ -1,0 +1,11 @@
+{
+  "appId": "com.mineradio.soundfield",
+  "appName": "Mineradio 声场版",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": true,
+    "backgroundColor": "#000000",
+    "webContentsDebuggingEnabled": true
+  },
+  "backgroundColor": "#000000"
+}

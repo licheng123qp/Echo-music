@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<!-- tests/panel-preview.html
+     声场面板的浏览器预览页：只加载声场三件套 + 样式，不依赖 Mineradio 主应用。
+     用途：
+       1. 无真机时用 headless Chromium 截图，检查面板排版；
+       2. 在真实 Chromium 的 Web Audio 实现上跑一次建图，验证节点类型没写错。 -->
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>声场面板预览</title>
+  <link rel="stylesheet" href="../www/css/soundfield.css">
+  <style>
+    /* 预览页背景：模拟播放器深色底，方便看玻璃面板的层次 */
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at 30% 20%, #16232a, #05080a 60%);
+      color: #e8ecef;
+      font-family: "Noto Sans SC", system-ui, sans-serif;
+    }
+    .hint {
+      padding: 24px;
+      font-size: 13px;
+      color: rgba(255, 255, 255, .45);
+      line-height: 1.8;
+    }
+    #selftest {
+      padding: 0 24px 24px;
+      font-size: 12px;
+      font-family: ui-monospace, monospace;
+      white-space: pre-wrap;
+      color: #7fe6d4;
+    }
+  </style>
+</head>
+<body>
+  <div class="hint">
+    这是声场面板的离线预览。真实应用里，右下角的「声场」按钮悬浮在播放器上方。<br>
+    下面是在当前浏览器里跑一遍声场建图的结果：
+  </div>
+  <div id="selftest">running…</div>
+
+  <script src="../www/js/soundfield/00-vehicle-model.js"></script>
+  <script src="../www/js/soundfield/10-soundfield-engine.js"></script>
+  <script src="../www/js/soundfield/20-soundfield-panel.js"></script>
+  <script>
+    // 用真实 AudioContext 建图：任何节点名/参数写错都会在这里抛出来，
+    // 比等到真机播放时才发现「没有声音」要早得多。
+    (function () {
+      var lines = [];
+      try {
+        var ctx = new (window.AudioContext || window.webkitAudioContext)();
+        var input = window.MRSoundField.outputNode(ctx);
+        lines.push('AudioContext: ' + ctx.state + ', sampleRate=' + ctx.sampleRate);
+        lines.push('outputNode: ' + (input ? input.constructor.name : 'null'));
+        lines.push('layout: ' + window.MRSoundField.getLayout());
+        window.MRSoundField.patch({ enabled: true, width: 1.6, center: 0.4, surround: 0.6, height: 0.5, mode: 'equalpower' });
+        lines.push('patch ok, params.width=' + window.MRSoundField.getParams().width);
+        window.MRSoundField.applyPreset('driver-first');
+        lines.push('preset: ' + window.MRSoundField.getParams().presetId + ', fader=' + window.MRSoundField.getParams().fader);
+        lines.push('SELFTEST: PASS');
+      } catch (e) {
+        lines.push('SELFTEST: FAIL ' + (e && e.message));
+      }
+      document.getElementById('selftest').textContent = lines.join('\n');
+      // 打开面板，截图时直接是展开态
+      setTimeout(function () { if (window.MRSoundFieldPanel) window.MRSoundFieldPanel.open(); }, 50);
+
+      // 排版自检：把关键元素的几何尺寸写回页面，headless 可以用 --dump-dom 读出来。
+      // 目的是在没有人眼和真机的情况下，也能发现「面板超出屏幕 / 控件点不到」这类问题。
+      setTimeout(function () {
+        function rect(sel) {
+          var node = document.querySelector(sel);
+          if (!node) return null;
+          var r = node.getBoundingClientRect();
+          return {
+            w: Math.round(r.width), h: Math.round(r.height),
+            top: Math.round(r.top), left: Math.round(r.left),
+            right: Math.round(r.right), bottom: Math.round(r.bottom),
+          };
+        }
+        var panel = rect('#sf-panel');
+        var launcher = rect('#sf-launcher');
+        var chip = rect('#sf-presets .sf-chip');
+        var range = rect('.sf-row .sf-range');
+        var eq = rect('.sf-eq-cell');
+        var viewport = { w: window.innerWidth, h: window.innerHeight };
+        var report = {
+          viewport: viewport,
+          panel: panel,
+          launcher: launcher,
+          chip: chip,
+          range: range,
+          eq: eq,
+          panelOverflowX: panel ? (panel.left < 0 || panel.right > viewport.w) : null,
+          panelOverflowY: panel ? (panel.top < 0 || panel.bottom > viewport.h) : null,
+          rangeTooSmall: range ? range.h < 20 : null,
+          eqTooSmall: eq ? eq.h < 40 : null,
+        };
+        var box = document.createElement('div');
+        box.id = 'layout-report';
+        box.textContent = 'LAYOUT:' + JSON.stringify(report);
+        document.body.appendChild(box);
+      }, 600);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+# 依赖与构建产物
+node_modules/
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/local.properties
+android/capacitor-cordova-android-plugins/
+
+# 签名与密钥
+*.jks
+*.keystore
+*.apk
+*.aab
+
+# 系统/编辑器
+.DS_Store
+Thumbs.db
+.idea/
+*.iml
+.vscode/
