@@ -102,7 +102,25 @@ input → preGain → 左右分离 → 10 段 EQ（每声道独立）→ 平衡�
 `setPerformanceQualityMode` / `setForegroundFpsMode`，和原 fx 面板同一份持久化。
 `30 FPS` 是本项目给 `normalizeForegroundFpsMode` 新增的档位（上游只支持 45 起）。
 
-## 5. 应用内检查更新
+## 5. 粒子总开关（默认关闭）
+
+车机上 3D 粒子是最大的持续开销：封面点阵 + 辉光各 33k 顶点、星空、骷髅/背板、歌词粒子、Sonic 地形，
+叠加加法混合后基本是「满屏像素都在算」。本版**默认关闭全部粒子**，面板里可以随时切回。
+
+实现方式（`www/js/soundfield/05-no-particles.js`，加载在 `index-loader` 之前）：
+
+1. 包住 `THREE.Points` 构造函数，任何粒子对象创建时就被登记；
+2. 锁住实例的 `visible`：上游主循环每帧都会重写 `particles.visible`，直接赋值会被覆盖，
+   这里改成「写入照收、关闭态读出来恒为 false」，不影响上游逻辑但真的不画；
+3. `geometry.setDrawRange(0, 0)`，即使将来被设为可见，GPU 也不遍历顶点；
+4. 把 `updateSkullParticleLayer` / `updateFloatLayer` / `tickLyricsParticles` 以及
+   `MineradioSonicTopography/Workshop.update` 包一层开关，关闭时连顶点属性都不计算；
+5. 打开时原样恢复（保留上游最后一次写入的可见性）。
+
+关闭粒子后，背景仍是 `#album-bg` 的模糊专辑底色，歌词/播放控制不受影响。
+想恢复原视觉：面板「粒子效果 → 开」，或设置 `localStorage['mineradio-particles-enabled-v1']='1'`。
+
+## 6. 应用内检查更新
 
 声场面板底部有「版本 · 检查更新」：
 
@@ -125,7 +143,7 @@ input → preGain → 左右分离 → 10 段 EQ（每声道独立）→ 平衡�
 
 > 下载与安装只能在真机上验证；浏览器预览里点检查会显示「最新发布 vX；本机版本未知」。
 
-## 6. 构建
+## 7. 构建
 
 环境：JDK 17、Android SDK（compileSdk 34 / build-tools 34.0.0）、Node.js 18+。
 
@@ -153,7 +171,7 @@ keytool -genkeypair -v -keystore mineradio-soundfield.jks -alias mineradio \
 
 > 官方包与本包的签名不同，**不能覆盖安装**，需先卸载官方版（会丢官方版的本地设置）。
 
-## 7. 目录结构
+## 8. 目录结构
 
 ```
 www/                         Mineradio 安卓版 Web 前端（来自官方 APK v2.2.0）
@@ -169,7 +187,7 @@ tests/soundfield-engine-test.js     声场引擎离线自检（假 AudioContext�
 docs/                       设计文档
 ```
 
-## 8. 与原版安卓包的差异（重要）
+## 9. 与原版安卓包的差异（重要）
 
 | 项 | 状态 |
 | --- | --- |
@@ -179,14 +197,14 @@ docs/                       设计文档
 | 扫码登录 Cookie | 保存在原生进程内存，**重启应用后需重新登录** |
 | 官方版升级通道 | 不适用，本包不跟随官方版本号 |
 
-## 9. 已知限制
+## 10. 已知限制
 
 - 声场输出最终仍是立体声。车机若通过 HAL 自行上混，实际听感会叠加一次车机处理，建议对照「2.0 纯直通」调参。
 - HRTF 模式在低端车机上可能掉帧/爆音，默认使用等功率声像。
 - 声场链只在播放器建立音频图时挂载；如果出现「拖滑杆没反应」，先确认正在播放（面板底部会显示挂载状态）。
 - 面板强制按 `visualViewport` 布局，因此**不支持系统级「网页缩放」之外的手动捏合缩放**；车机上的 `maximum-scale=0.38` 也决定了这一点。
 
-## 10. 版权与许可
+## 11. 版权与许可
 
 - 本项目代码以 **GPL-3.0** 发布，见 [LICENSE](LICENSE)。
 - Mineradio 前端与品牌归原作者 **XxHuberrr** 所有（GPL-3.0）；本仓库是非官方衍生版，不代表原作者。

@@ -2315,6 +2315,8 @@
   <!-- 领克 08 声场：模型 → DSP 引擎 → 面板，必须在 index-loader 之前注册，
        否则第一次播放时音频图已经建好，声场链挂不上去（要等下一次换歌才生效）。 -->
   <script src="js/soundfield/00-vehicle-model.js?v=1"></script>
+  <!-- 粒子开关：必须抢在 index-loader 之前包住 THREE.Points，否则拦不到已创建的粒子 -->
+  <script src="js/soundfield/05-no-particles.js?v=1"></script>
   <script src="js/soundfield/10-soundfield-engine.js?v=1"></script>
   <script src="js/soundfield/20-soundfield-panel.js?v=1"></script>
   <!-- 应用内检查更新：GitHub Release → 原生下载 → 系统安装器 -->

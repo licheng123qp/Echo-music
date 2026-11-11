@@ -125,6 +125,11 @@
       { value: 'high', label: '高' },
     ], 'data-quality');
 
+    dom.particlesRow = addChipRow('粒子效果', [
+      { value: 'off', label: '关（省电）' },
+      { value: 'on', label: '开' },
+    ], 'data-particles');
+
     dom.fpsRow = addChipRow('帧率上限', [
       { value: '30', label: '30' },
       { value: '45', label: '45' },
@@ -381,6 +386,10 @@
     markChipActive(dom.fpsRow, function (chip) {
       return chip.getAttribute('data-fps') === (fxNow.foregroundFpsMode || 'vsync');
     });
+    var particlesOn = !!(root.MRParticles && root.MRParticles.isEnabled());
+    markChipActive(dom.particlesRow, function (chip) {
+      return chip.getAttribute('data-particles') === (particlesOn ? 'on' : 'off');
+    });
 
     dom.modeBtn.textContent = params.mode === 'hrtf' ? '声像：HRTF' : '声像：等功率';
     dom.status.textContent = engine.isAttached() ? '正在播放：参数实时生效' : '未开始播放：参数已保存，播放后生效';
@@ -471,6 +480,14 @@
     });
 
     // 帧率上限：车机上固定 45 通常比跟随 60 明显省电，画面几乎看不出差别
+    // 粒子效果：默认关闭。关闭时 GPU 不再遍历任何粒子顶点，是车机上最直接的一刀
+    dom.particlesRow.addEventListener('click', function (e) {
+      var chip = e.target.closest('[data-particles]');
+      if (!chip || !root.MRParticles) return;
+      root.MRParticles.setEnabled(chip.getAttribute('data-particles') === 'on');
+      refresh(engine.getParams());
+    });
+
     dom.fpsRow.addEventListener('click', function (e) {
       var chip = e.target.closest('[data-fps]');
       if (!chip || typeof setForegroundFpsMode !== 'function') return;

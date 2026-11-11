@@ -7,8 +7,8 @@ android {
         applicationId "com.mineradio.soundfield"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2023
-        versionName "2.2.0-sf4"
+        versionCode 2024
+        versionName "2.2.0-sf5"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
