@@ -291,6 +291,26 @@
     flex: 1;
 }
 
+/* ── 版本与更新 ───────────────────────────────────────────── */
+.sf-version-row {
+    justify-content: space-between;
+}
+
+.sf-version {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: calc(var(--sf-fs) * .82);
+    color: rgba(255, 255, 255, .72);
+    letter-spacing: .04em;
+}
+
+.sf-update-status {
+    min-height: calc(var(--sf-fs) * 1.1);
+}
+
+.sf-download-btn {
+    align-self: flex-start;
+}
+
 /* ── 滑杆行 ───────────────────────────────────────────────── */
 .sf-row {
     display: flex;

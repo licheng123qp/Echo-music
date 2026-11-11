@@ -18,6 +18,8 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // registerPlugin 必须在 super.onCreate 之前，否则 Capacitor 初始化时插件表里还没有它
         registerPlugin(FoliaBridgePlugin.class);
+        // 应用内检查更新后的下载与安装
+        registerPlugin(MineradioUpdaterPlugin.class);
         super.onCreate(savedInstanceState);
 
         WebView webView = getBridge() == null ? null : getBridge().getWebView();

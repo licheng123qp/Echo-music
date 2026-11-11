@@ -40,6 +40,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 应用内检查更新后要能调起系统安装器（Android 8+ 需要此权限，用户仍需在系统里允许） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- 本地音乐库/自定义封面需要读媒体文件（Android 13+ 用细分权限） -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />

@@ -102,7 +102,30 @@ input → preGain → 左右分离 → 10 段 EQ（每声道独立）→ 平衡�
 `setPerformanceQualityMode` / `setForegroundFpsMode`，和原 fx 面板同一份持久化。
 `30 FPS` 是本项目给 `normalizeForegroundFpsMode` 新增的档位（上游只支持 45 起）。
 
-## 5. 构建
+## 5. 应用内检查更新
+
+声场面板底部有「版本 · 检查更新」：
+
+1. 通过 `https://api.github.com/repos/licheng123qp/Echo-music/releases/latest` 取最新 Release；
+2. 用本机 `versionName`（原生 `PackageManager` 读取）和 tag 做语义化比较
+   （`2.2.0-sf4` vs `2.2.0-sf3`：先比 2.2.0，再比 `sf` 后的数字；正式版 `2.3.0` 高于任何 `2.2.x-sfN`）；
+3. 有新版本时出现「下载并安装 vX」按钮：原生 `DownloadManager` 下载到应用私有目录，
+   完成广播后用 `FileProvider` 交给系统安装器（首次需要允许「安装未知应用」）；
+4. 检查结果缓存 24 小时，避免把 GitHub 匿名 API 的 60 次/小时额度打满；
+5. GitHub 在该车机网络下不可达时，按钮会变成「打开发布页面」，走系统浏览器兜底。
+
+相关文件：
+
+| 文件 | 职责 |
+| --- | --- |
+| `www/js/soundfield/30-update.js` | 版本比较、请求 GitHub、触发下载 |
+| `android/.../MineradioUpdaterPlugin.java` | `getAppInfo` / `downloadAndInstall` / `install` / `openExternal` |
+| `android/app/src/main/res/xml/file_paths.xml` | FileProvider 暴露下载目录 |
+| `AndroidManifest.xml` | `REQUEST_INSTALL_PACKAGES` 权限 |
+
+> 下载与安装只能在真机上验证；浏览器预览里点检查会显示「最新发布 vX；本机版本未知」。
+
+## 6. 构建
 
 环境：JDK 17、Android SDK（compileSdk 34 / build-tools 34.0.0）、Node.js 18+。
 
@@ -130,7 +153,7 @@ keytool -genkeypair -v -keystore mineradio-soundfield.jks -alias mineradio \
 
 > 官方包与本包的签名不同，**不能覆盖安装**，需先卸载官方版（会丢官方版的本地设置）。
 
-## 6. 目录结构
+## 7. 目录结构
 
 ```
 www/                         Mineradio 安卓版 Web 前端（来自官方 APK v2.2.0）
@@ -146,7 +169,7 @@ tests/soundfield-engine-test.js     声场引擎离线自检（假 AudioContext�
 docs/                       设计文档
 ```
 
-## 7. 与原版安卓包的差异（重要）
+## 8. 与原版安卓包的差异（重要）
 
 | 项 | 状态 |
 | --- | --- |
@@ -156,14 +179,14 @@ docs/                       设计文档
 | 扫码登录 Cookie | 保存在原生进程内存，**重启应用后需重新登录** |
 | 官方版升级通道 | 不适用，本包不跟随官方版本号 |
 
-## 8. 已知限制
+## 9. 已知限制
 
 - 声场输出最终仍是立体声。车机若通过 HAL 自行上混，实际听感会叠加一次车机处理，建议对照「2.0 纯直通」调参。
 - HRTF 模式在低端车机上可能掉帧/爆音，默认使用等功率声像。
 - 声场链只在播放器建立音频图时挂载；如果出现「拖滑杆没反应」，先确认正在播放（面板底部会显示挂载状态）。
 - 面板强制按 `visualViewport` 布局，因此**不支持系统级「网页缩放」之外的手动捏合缩放**；车机上的 `maximum-scale=0.38` 也决定了这一点。
 
-## 9. 版权与许可
+## 10. 版权与许可
 
 - 本项目代码以 **GPL-3.0** 发布，见 [LICENSE](LICENSE)。
 - Mineradio 前端与品牌归原作者 **XxHuberrr** 所有（GPL-3.0）；本仓库是非官方衍生版，不代表原作者。

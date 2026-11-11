@@ -132,6 +132,21 @@
       { value: 'vsync', label: '跟随屏幕' },
     ], 'data-fps');
 
+    // ── 版本与更新 ──────────────────────────────────────────
+    body.appendChild(el('div', { className: 'sf-section-label' }, '版本'));
+    var versionRow = el('div', { className: 'sf-inline-row sf-version-row' });
+    dom.versionText = el('span', { className: 'sf-version' }, 'v—');
+    dom.checkUpdateBtn = el('button', { className: 'sf-ghost-btn', type: 'button' }, '检查更新');
+    versionRow.appendChild(dom.versionText);
+    versionRow.appendChild(dom.checkUpdateBtn);
+    body.appendChild(versionRow);
+    dom.updateStatus = el('div', { className: 'sf-note sf-update-status' }, '');
+    body.appendChild(dom.updateStatus);
+    // 只有发现新版本时才出现，平时不占位
+    dom.downloadBtn = el('button', { className: 'sf-chip sf-active sf-download-btn', type: 'button' });
+    dom.downloadBtn.style.display = 'none';
+    body.appendChild(dom.downloadBtn);
+
     // ── 预设 ────────────────────────────────────────────────
     body.appendChild(el('div', { className: 'sf-section-label' }, '声场预设'));
     dom.presetRow = el('div', { className: 'sf-chips', id: 'sf-presets' });
@@ -231,6 +246,14 @@
     applyCarPerformanceDefaults();
     bindEvents();
     refresh(engine.getParams());
+
+    // 版本号：问原生拿 BuildConfig.VERSION_NAME，拿不到显示「未知」
+    if (root.MRUpdater) {
+      root.MRUpdater.getAppInfo().then(function () {
+        var label = root.MRUpdater.currentVersionLabel();
+        if (dom.versionText) dom.versionText.textContent = label === '未知' ? 'v未知' : ('v' + label);
+      });
+    }
   }
 
   /**
@@ -291,6 +314,11 @@
     // 每次打开都重算一次：车机可能在后台被旋转/分屏，账不能按打开时的尺寸算
     layoutRoot();
     refresh(engine.getParams());
+    // 静默检查更新：内部有 24h 缓存，不会每次开面板都打 GitHub API
+    if (!open.updateCheckedOnce) {
+      open.updateCheckedOnce = true;
+      runUpdateCheck(false);
+    }
     dom.panel.classList.add('sf-show');
     dom.backdrop.classList.add('sf-show');
     dom.launcher.classList.add('sf-hidden');
@@ -453,6 +481,43 @@
     // 整页重排后（缩放变化）面板要重新钉回可见视口
     window.addEventListener('mineradio-ui-zoom', function () { setTimeout(layoutRoot, 60); });
 
+    // 检查更新：打 GitHub Release，再决定是提示「已是最新」还是给下载按钮
+    dom.checkUpdateBtn.addEventListener('click', function () {
+      runUpdateCheck(true);
+    });
+
+    // 下载并安装：走原生 DownloadManager，完成后系统安装器自动弹出
+    dom.downloadBtn.addEventListener('click', async function () {
+      if (!root.MRUpdater) return;
+      // GitHub 不可达时这个按钮是「打开发布页」，不是下载
+      if (dom.downloadBtn.getAttribute('data-update-action') === 'page') {
+        try {
+          await root.MRUpdater.openReleasePage();
+          dom.updateStatus.textContent = '已打开发布页面';
+        } catch (e) {
+          dom.updateStatus.textContent = '无法打开链接：' + (e && e.message ? e.message : '未知错误');
+        }
+        return;
+      }
+      dom.downloadBtn.disabled = true;
+      var original = dom.downloadBtn.textContent;
+      dom.downloadBtn.textContent = '下载中…';
+      dom.updateStatus.textContent = '正在下载安装包，完成后会自动弹出安装界面';
+      try {
+        var res = await root.MRUpdater.download();
+        if (res && res.status === 'completed') {
+          dom.updateStatus.textContent = '下载完成，请按系统提示安装';
+        } else if (res && res.status === 'opened') {
+          dom.updateStatus.textContent = '已打开下载页面';
+        }
+      } catch (e) {
+        dom.updateStatus.textContent = '下载失败：' + (e && e.message ? e.message : '未知错误');
+      } finally {
+        dom.downloadBtn.disabled = false;
+        dom.downloadBtn.textContent = original;
+      }
+    });
+
     dom.modeBtn.addEventListener('click', function () {
       var params = engine.getParams();
       refresh(engine.patch({ mode: params.mode === 'hrtf' ? 'equalpower' : 'hrtf' }));
@@ -476,6 +541,67 @@
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', layoutRoot);
       window.visualViewport.addEventListener('scroll', layoutRoot);
+    }
+  }
+
+  /**
+   * 检查更新并刷新界面。
+   * force=true 时跳过 24h 缓存（用户主动点「检查更新」）。
+   */
+  async function runUpdateCheck(force) {
+    var updater = root.MRUpdater;
+    if (!updater) {
+      dom.updateStatus.textContent = '更新模块未加载';
+      return;
+    }
+    dom.checkUpdateBtn.disabled = true;
+    var label = dom.checkUpdateBtn.textContent;
+    dom.checkUpdateBtn.textContent = '检查中…';
+    dom.updateStatus.textContent = '正在连接 GitHub…';
+    try {
+      var res = await updater.check({ force: !!force });
+      renderUpdate(res);
+    } catch (e) {
+      dom.updateStatus.textContent = '检查失败：' + (e && e.message ? e.message : '网络异常');
+    } finally {
+      dom.checkUpdateBtn.disabled = false;
+      dom.checkUpdateBtn.textContent = label;
+    }
+  }
+
+  /** 把检查结果渲染成一行状态 + 一个（可能出现的）下载按钮。 */
+  function renderUpdate(res) {
+    if (!res) return;
+    if (res.current && res.current.versionName) {
+      dom.versionText.textContent = 'v' + res.current.versionName;
+    }
+    dom.downloadBtn.style.display = 'none';
+
+    if (res.error) {
+      // GitHub 在部分车机网络下不可达：给一个「打开发布页」的兜底，而不是只报错
+      dom.updateStatus.textContent = res.error;
+      dom.downloadBtn.textContent = '打开发布页面';
+      dom.downloadBtn.setAttribute('data-update-action', 'page');
+      dom.downloadBtn.style.display = '';
+      return;
+    }
+    if (!res.latest) {
+      dom.updateStatus.textContent = '未获取到发布信息';
+      return;
+    }
+    var size = root.MRUpdater ? root.MRUpdater.formatSize(res.latest.apkSize) : '';
+    if (!res.current || !res.current.versionName) {
+      // 网页预览/读不到版本时不能硬说「已是最新」，如实显示最新发布号
+      dom.updateStatus.textContent = '最新发布 ' + res.latest.tag + (size ? '（' + size + '）' : '') + '；本机版本未知';
+      return;
+    }
+    if (res.hasUpdate) {
+      dom.updateStatus.textContent = '发现新版本 ' + res.latest.tag + (size ? '（' + size + '）' : '');
+      dom.downloadBtn.textContent = '下载并安装 ' + res.latest.tag;
+      dom.downloadBtn.setAttribute('data-update-action', 'download');
+      dom.downloadBtn.style.display = '';
+    } else {
+      dom.updateStatus.textContent = '已是最新版本（' + res.latest.tag + '）';
     }
   }
 

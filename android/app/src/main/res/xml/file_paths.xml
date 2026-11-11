@@ -2,4 +2,6 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <external-path name="my_images" path="." />
     <cache-path name="my_cache_images" path="." />
+    <!-- 应用内下载的更新包放在 external-files/Download，安装时需要 FileProvider 授权 -->
+    <external-files-path name="my_downloads" path="." />
 </paths>
