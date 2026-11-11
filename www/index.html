@@ -135,25 +135,22 @@
       }, 2500);
 
       /**
-       * 兜底：少数 WebView 不认动态改过的 viewport（宽度/初始缩放都没生效）。
-       * 判定方式不依赖 visualViewport.scale（它可能不上报），而是比较：
-       *   布局视口宽（documentElement.clientWidth） vs 可见宽（visualViewport.width）
-       * 正常生效时两者相等；没生效时页面比可见区域宽，比值就是需要补的缩放。
+       * 兜底：少数 WebView 只认 meta 里的 width、不认 initial-scale（或反过来）。
+       * 判定用设备自己的 visualViewport.scale（真实渲染缩放），和期望的 SCALE 比：
+       *   一致 → 什么都不做；
+       *   不一致 → 用 CSS zoom 补齐差额（zoom 会连 vw 一起缩放，所以能兜住）。
        */
       setTimeout(function () {
         var vv = window.visualViewport;
-        if (!vv || !(vv.width > 0)) return;
-        var layoutW = document.documentElement.clientWidth || 0;
-        if (layoutW <= 0) return;
-        var visibleCss = vv.width;
-        if (visibleCss <= 0) return;
-        // 页面明显比可见区域宽 → meta 的 width 没被采纳，用 CSS zoom 收到可见宽
-        if (layoutW > visibleCss * 1.05) {
-          var factor = visibleCss / layoutW;
-          document.documentElement.style.zoom = String(factor);
-          window.__mrZoomFallback = true;
-          console.warn('[Viewport] meta 未生效，CSS zoom 兜底 ×' + factor.toFixed(3));
-        }
+        if (!vv || !(vv.scale > 0)) return;
+        var expected = SCALE;
+        var actual = vv.scale;
+        if (!expected || actual <= 0) return;
+        var ratio = expected / actual;
+        if (Math.abs(ratio - 1) < 0.06) return; // 已经一致
+        document.documentElement.style.zoom = String(ratio);
+        window.__mrZoomFallback = true;
+        console.warn('[Viewport] 设备缩放与期望不一致（actual=' + actual + ', expected=' + expected + '），已用 CSS zoom ×' + ratio.toFixed(3) + ' 兜底');
       }, 1200);
     })();
   </script>

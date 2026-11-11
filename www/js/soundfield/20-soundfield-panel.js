@@ -130,6 +130,10 @@
     dom.zoomInfo = el('div', { className: 'sf-note sf-zoom-info' }, '');
     body.appendChild(dom.zoomInfo);
 
+    // 诊断用：直接给 <html> 加 CSS zoom，验证这台 WebView 上「放大」到底有没有视觉效果
+    dom.zoomTestBtn = el('button', { className: 'sf-ghost-btn', type: 'button' }, '缩放测试 (CSS zoom)');
+    body.appendChild(dom.zoomTestBtn);
+
     dom.particlesRow = addChipRow('粒子效果', [
       { value: 'off', label: '关（省电）' },
       { value: 'on', label: '开' },
@@ -317,10 +321,15 @@
     dom.root.style.setProperty('--sf-tap', ((tapPx * zoom) / scale) + 'px');
     // 诊断行：车机上「改了没反应」时，这三个数能直接定位是 meta 没生效还是没存进去
     if (dom.zoomInfo) {
-      dom.zoomInfo.textContent = '布局 ' + (window.__mrLayoutWidth || '?')
-        + ' · 视觉 ' + Math.round(zoom * 100) + '%'
-        + ' · 实际 ×' + scale.toFixed(2)
-        + (window.__mrZoomFallback ? ' · CSS 兜底' : '');
+      // 设备真实值：visualViewport.scale 是 WebView 实际用的缩放，
+      // 和我们「期望的」SCALE 不一致，就说明 meta 没被采纳
+      var vv = window.visualViewport;
+      var actualScale = vv && vv.scale > 0 ? vv.scale : 1;
+      dom.zoomInfo.textContent = '设备 ×' + actualScale.toFixed(2)
+        + ' · 期望 ×' + scale.toFixed(2)
+        + ' · 布局 ' + (document.documentElement.clientWidth || '?')
+        + ' · 窗口 ' + Math.round(window.innerWidth) + '×' + Math.round(window.innerHeight)
+        + (window.__mrZoomFallback ? ' · CSS兜底' : '');
     }
     // 可见视口宽高比 ≥ 1.45 视为横屏（领克 08 车机 16:10 = 1.6），面板改右侧抽屉
     dom.root.classList.toggle('sf-drawer', (m.width / Math.max(1, m.height)) >= 1.45);
@@ -493,6 +502,16 @@
     });
 
     // 帧率上限：车机上固定 45 通常比跟随 60 明显省电，画面几乎看不出差别
+    // 缩放测试：切换 <html> 的 CSS zoom，并在状态行回报当时的真实缩放
+    dom.zoomTestBtn.addEventListener('click', function () {
+      var html = document.documentElement;
+      var next = html.style.zoom ? '' : '1.35';
+      html.style.zoom = next;
+      var vv = window.visualViewport;
+      dom.updateStatus.textContent = 'CSS zoom 测试：' + (next ? '已放大 1.35 倍' : '已还原')
+        + ' · 设备缩放 ×' + (vv && vv.scale ? vv.scale.toFixed(2) : '?');
+    });
+
     // 粒子效果：默认关闭。关闭时 GPU 不再遍历任何粒子顶点，是车机上最直接的一刀
     dom.particlesRow.addEventListener('click', function (e) {
       var chip = e.target.closest('[data-particles]');
