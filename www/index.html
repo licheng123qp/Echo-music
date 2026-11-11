@@ -42,7 +42,7 @@
       /** 读取界面缩放倍率：0.85~1.6，未设置时车机给 1.15、手机给 1.0。 */
       function readUiZoom() {
         var raw = Number(localStorage.getItem(ZOOM_KEY));
-        if (raw >= 0.85 && raw <= 1.6) return raw;
+        if (raw >= 0.85 && raw <= 2.0) return raw;
         return screenCssWidth() >= 900 ? 1.15 : 1.0;
       }
 
@@ -81,12 +81,12 @@
       }, { passive: true });
 
       /**
-       * 设置整体界面缩放（0.85~1.6）。
+       * 设置整体界面缩放（0.85~2.0）。
        * 声场面板调用；改完立刻重排，不需要重启。
        */
       window.__mrSetUiZoom = function (zoom) {
         zoom = Number(zoom);
-        if (!(zoom >= 0.85 && zoom <= 1.6)) return;
+        if (!(zoom >= 0.85 && zoom <= 2.0)) return;
         try { localStorage.setItem(ZOOM_KEY, String(zoom)); } catch (e) { /* 存不下只影响下次启动 */ }
         SCALE = BASE_SCALE * zoom;
         applyViewport();

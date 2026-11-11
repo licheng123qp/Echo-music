@@ -117,6 +117,8 @@
       { value: '1', label: '100%' },
       { value: '1.15', label: '115%' },
       { value: '1.3', label: '130%' },
+      { value: '1.5', label: '150%' },
+      { value: '2', label: '200%' },
     ], 'data-zoom');
 
     dom.qualityRow = addChipRow('画质', [
