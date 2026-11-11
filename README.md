@@ -120,7 +120,15 @@ input → preGain → 左右分离 → 10 段 EQ（每声道独立）→ 平衡�
 关闭粒子后，背景仍是 `#album-bg` 的模糊专辑底色，歌词/播放控制不受影响。
 想恢复原视觉：面板「粒子效果 → 开」，或设置 `localStorage['mineradio-particles-enabled-v1']='1'`。
 
-## 6. 应用内检查更新
+## 6. 启动与更新体验
+
+- **去掉开屏「点击进入」**：`06-skip-splash.js` 在 `index-loader` 之前把
+  `mineradio-startup-fast-skip-v1` 置 1，并在 DOM 就绪时主动 `dismissSplash({instant:true})`，
+  开机直接进首页；顺带省掉开屏那段 WebGL 动画与开场音。
+- **下载进度**：原生 `DownloadManager` 每 500ms 查一次 `已下载 / 总大小`，通过
+  `notifyListeners('progress')` 推给前端，面板状态行与按钮实时显示百分比与 MB 进度。
+
+## 7. 应用内检查更新
 
 声场面板底部有「版本 · 检查更新」：
 
@@ -143,7 +151,7 @@ input → preGain → 左右分离 → 10 段 EQ（每声道独立）→ 平衡�
 
 > 下载与安装只能在真机上验证；浏览器预览里点检查会显示「最新发布 vX；本机版本未知」。
 
-## 7. 构建
+## 8. 构建
 
 环境：JDK 17、Android SDK（compileSdk 34 / build-tools 34.0.0）、Node.js 18+。
 
@@ -171,7 +179,7 @@ keytool -genkeypair -v -keystore mineradio-soundfield.jks -alias mineradio \
 
 > 官方包与本包的签名不同，**不能覆盖安装**，需先卸载官方版（会丢官方版的本地设置）。
 
-## 8. 目录结构
+## 9. 目录结构
 
 ```
 www/                         Mineradio 安卓版 Web 前端（来自官方 APK v2.2.0）
@@ -187,7 +195,7 @@ tests/soundfield-engine-test.js     声场引擎离线自检（假 AudioContext�
 docs/                       设计文档
 ```
 
-## 9. 与原版安卓包的差异（重要）
+## 10. 与原版安卓包的差异（重要）
 
 | 项 | 状态 |
 | --- | --- |
@@ -197,14 +205,14 @@ docs/                       设计文档
 | 扫码登录 Cookie | 保存在原生进程内存，**重启应用后需重新登录** |
 | 官方版升级通道 | 不适用，本包不跟随官方版本号 |
 
-## 10. 已知限制
+## 11. 已知限制
 
 - 声场输出最终仍是立体声。车机若通过 HAL 自行上混，实际听感会叠加一次车机处理，建议对照「2.0 纯直通」调参。
 - HRTF 模式在低端车机上可能掉帧/爆音，默认使用等功率声像。
 - 声场链只在播放器建立音频图时挂载；如果出现「拖滑杆没反应」，先确认正在播放（面板底部会显示挂载状态）。
 - 面板强制按 `visualViewport` 布局，因此**不支持系统级「网页缩放」之外的手动捏合缩放**；车机上的 `maximum-scale=0.38` 也决定了这一点。
 
-## 11. 版权与许可
+## 12. 版权与许可
 
 - 本项目代码以 **GPL-3.0** 发布，见 [LICENSE](LICENSE)。
 - Mineradio 前端与品牌归原作者 **XxHuberrr** 所有（GPL-3.0）；本仓库是非官方衍生版，不代表原作者。

@@ -500,6 +500,9 @@
     // 整页重排后（缩放变化）面板要重新钉回可见视口
     window.addEventListener('mineradio-ui-zoom', function () { setTimeout(layoutRoot, 60); });
 
+    // 下载进度：原生 DownloadManager 每 500ms 推一次 progress 事件
+    bindUpdateProgress();
+
     // 检查更新：打 GitHub Release，再决定是提示「已是最新」还是给下载按钮
     dom.checkUpdateBtn.addEventListener('click', function () {
       runUpdateCheck(true);
@@ -561,6 +564,33 @@
       window.visualViewport.addEventListener('resize', layoutRoot);
       window.visualViewport.addEventListener('scroll', layoutRoot);
     }
+  }
+
+  /**
+   * 绑定下载进度事件。
+   * 原生侧每 500ms 推 { received, total, percent }；percent=-1 表示总大小未知。
+   * 没有原生插件（网页预览）时直接跳过。
+   */
+  function bindUpdateProgress() {
+    if (bindUpdateProgress.bound) return;
+    var cap = root.Capacitor;
+    var updaterPlugin = cap && cap.Plugins && cap.Plugins.MineradioUpdater;
+    if (!updaterPlugin || typeof updaterPlugin.addListener !== 'function') return;
+    bindUpdateProgress.bound = true;
+    updaterPlugin.addListener('progress', function (event) {
+      var percent = event && typeof event.percent === 'number' ? event.percent : -1;
+      var received = event && event.received ? root.MRUpdater.formatSize(event.received) : '';
+      var total = event && event.total ? root.MRUpdater.formatSize(event.total) : '';
+      if (dom.updateStatus) {
+        dom.updateStatus.textContent = percent >= 0
+          ? '下载中 ' + Math.round(percent) + '%' + (total ? '（' + received + ' / ' + total + '）' : '')
+          : '正在下载…';
+      }
+      if (dom.downloadBtn && dom.downloadBtn.style.display !== 'none') {
+        // 按钮本身也带百分比，车机上不用盯着小字状态行
+        dom.downloadBtn.textContent = percent >= 0 ? '下载中 ' + Math.round(percent) + '%' : '下载中…';
+      }
+    });
   }
 
   /**

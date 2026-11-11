@@ -40,6 +40,10 @@ public class MineradioUpdaterPlugin extends Plugin {
     /** 下载期间挂起的调用，完成/失败时回复。 */
     private PluginCall pendingCall;
 
+    /** 进度轮询：DownloadManager 没有进度回调，只能定时查。 */
+    private final android.os.Handler progressHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable progressTask;
+
     /** 下载完成后要安装的文件。 */
     private File pendingFile;
 
@@ -136,11 +140,59 @@ public class MineradioUpdaterPlugin extends Plugin {
 
             downloadId = manager.enqueue(request);
             pendingCall = call;
+            startProgressPolling(manager);
             pendingFile = target;
             call.setKeepAlive(true);
             registerDownloadReceiver(manager);
         } catch (Exception e) {
             call.reject("下载启动失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 每 500ms 查一次下载进度并推给前端。
+     * 事件名 progress，载荷 { received, total, percent }；
+     * percent 在总大小未知时为 -1，前端据此只显示「正在下载」。
+     */
+    private void startProgressPolling(final DownloadManager manager) {
+        stopProgressPolling();
+        progressTask = new Runnable() {
+            @Override
+            public void run() {
+                long id = downloadId;
+                if (id <= 0) return;
+                long received = 0;
+                long total = 0;
+                int status = DownloadManager.STATUS_RUNNING;
+                DownloadManager.Query query = new DownloadManager.Query().setFilterById(id);
+                try (android.database.Cursor cursor = manager.query(query)) {
+                    if (cursor != null && cursor.moveToFirst()) {
+                        received = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
+                        total = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
+                        status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
+                    }
+                } catch (Exception ignored) {
+                    // 查询失败就停一轮，下一轮再试
+                }
+                JSObject payload = new JSObject();
+                payload.put("received", received);
+                payload.put("total", total);
+                payload.put("percent", total > 0 ? Math.round(received * 1000.0 / total) / 10.0 : -1);
+                notifyListeners("progress", payload);
+
+                if (status == DownloadManager.STATUS_RUNNING || status == DownloadManager.STATUS_PENDING) {
+                    progressHandler.postDelayed(this, 500);
+                }
+            }
+        };
+        progressHandler.post(progressTask);
+    }
+
+    /** 停止进度轮询（下载结束或页面销毁时调用）。 */
+    private void stopProgressPolling() {
+        if (progressTask != null) {
+            progressHandler.removeCallbacks(progressTask);
+            progressTask = null;
         }
     }
 
@@ -181,6 +233,7 @@ public class MineradioUpdaterPlugin extends Plugin {
                 long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
                 if (id != downloadId) return;
 
+                stopProgressPolling();
                 PluginCall call = pendingCall;
                 pendingCall = null;
                 long finishedId = downloadId;
@@ -231,6 +284,7 @@ public class MineradioUpdaterPlugin extends Plugin {
             // 没注册成功或已注销，忽略
         }
         downloadReceiver = null;
+        stopProgressPolling();
         if (pendingCall != null) {
             pendingCall.reject("页面已关闭，下载被取消");
             pendingCall = null;
