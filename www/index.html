@@ -39,11 +39,13 @@
         return Math.max(1, physical / dpr);
       }
 
-      /** 读取界面缩放倍率：0.85~1.6，未设置时车机给 1.15、手机给 1.0。 */
+      /** 读取界面缩放倍率（0.85~2.0）；未设置时：≥1800 宽的车机给 150%，平板 115%，手机 100%。 */
       function readUiZoom() {
         var raw = Number(localStorage.getItem(ZOOM_KEY));
         if (raw >= 0.85 && raw <= 2.0) return raw;
-        return screenCssWidth() >= 900 ? 1.15 : 1.0;
+        var width = screenCssWidth();
+        if (width >= 1800) return 1.5;
+        return width >= 900 ? 1.15 : 1.0;
       }
 
       var SCALE = BASE_SCALE * readUiZoom();
@@ -82,15 +84,21 @@
 
       /**
        * 设置整体界面缩放（0.85~2.0）。
-       * 声场面板调用；改完立刻重排，不需要重启。
+       *
+       * 为什么要 reload：
+       *   改 meta viewport 只能让浏览器按新比例重排「后续」的布局，但 Mineradio 有大量
+       *   元素的位置/尺寸是首次启动时用 JS 算好写死的内联样式（顶栏、底栏、浮动胶囊等），
+       *   它们不会跟着重新算 —— 表现就是「只有一部分界面变大，其余还停在旧比例」。
+       *   直接整页重载是最省事、也是唯一能保证「全局生效」的做法；缩放是低频操作，代价可接受。
        */
       window.__mrSetUiZoom = function (zoom) {
         zoom = Number(zoom);
         if (!(zoom >= 0.85 && zoom <= 2.0)) return;
         try { localStorage.setItem(ZOOM_KEY, String(zoom)); } catch (e) { /* 存不下只影响下次启动 */ }
+        // 先把新比例落进 meta，重载后首帧就是正确比例，避免闪一下旧布局
         SCALE = BASE_SCALE * zoom;
         applyViewport();
-        window.dispatchEvent(new Event('mineradio-ui-zoom'));
+        setTimeout(function () { location.reload(); }, 120);
       };
 
       /** 读取当前界面缩放倍率（面板显示用）。 */
