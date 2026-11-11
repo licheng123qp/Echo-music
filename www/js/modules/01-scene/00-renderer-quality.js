@@ -132,10 +132,29 @@ function renderQualityProfile() {
   if (quality === 'ultra') return { cap: 1.75, min: 0.85, budget: 7800000 };
   return { cap: lowSpec ? 1.12 : RENDER_DPR_CAP, min: lowSpec ? 0.66 : RENDER_MIN_DPR, budget: lowSpec ? 3600000 : RENDER_PIXEL_BUDGET };
 }
+/**
+ * 渲染表面尺寸：取「可见视口」而不是布局视口。
+ *
+ * 为什么必须这样：Mineradio 把布局视口放大到「屏宽/0.38」，车机上 innerWidth 会到
+ * 6736~10000，而肉眼只有 2560。按 innerWidth 建 WebGL drawing buffer 等于把粒子渲染
+ * 分辨率放大 3~4 倍（实测 5200×3250），车机 GPU 直接被拖死。
+ * visualViewport 给的是肉眼所见尺寸，渲染按它来，画面清晰度不变、开销降到 1/4~1/7。
+ */
+function renderSurfaceSize() {
+  var vv = window.visualViewport;
+  if (vv && vv.width > 0 && vv.height > 0) {
+    // 乘 scale 换回「屏幕 CSS 像素」：visualViewport 的宽高是布局像素，
+    // 直接拿来算像素预算会把 2560 屏当成 5858 屏，预算被稀释、buffer 反而更大。
+    var scale = vv.scale > 0 ? vv.scale : 1;
+    return { width: vv.width * scale, height: vv.height * scale };
+  }
+  return { width: Math.max(1, innerWidth), height: Math.max(1, innerHeight) };
+}
 function getRenderPixelRatio() {
   var device = window.devicePixelRatio || 1;
   if (isDeepBackgroundMode()) return Math.min(device, 0.30);
-  var cssPixels = Math.max(1, innerWidth * innerHeight);
+  var surface = renderSurfaceSize();
+  var cssPixels = Math.max(1, surface.width * surface.height);
   var quality = renderQualityProfile();
   var budgetCap = Math.sqrt(quality.budget / cssPixels);
   var cap = Math.min(quality.cap, budgetCap);
@@ -143,7 +162,8 @@ function getRenderPixelRatio() {
 }
 function getRenderPixelLoad() {
   var ratio = getRenderPixelRatio();
-  return Math.max(1, innerWidth * innerHeight) * ratio * ratio;
+  var surface = renderSurfaceSize();
+  return Math.max(1, surface.width * surface.height) * ratio * ratio;
 }
 function markRenderInteraction(reason, holdMs) {
   if (isDeepBackgroundMode()) return;
@@ -168,7 +188,8 @@ function isRenderInteractionActive(now) {
   return (now || performance.now()) < renderInteractionBoostUntil;
 }
 function getRenderLoadTier() {
-  var cssPixels = Math.max(1, innerWidth * innerHeight);
+  var surface = renderSurfaceSize();
+  var cssPixels = Math.max(1, surface.width * surface.height);
   var renderPixels = (typeof getRenderPixelLoad === 'function') ? getRenderPixelLoad() : cssPixels;
   if (cssPixels >= 7200000 || renderPixels >= 5000000) return 2;
   if (cssPixels >= 3200000 || renderPixels >= 3600000) return 1;
@@ -177,7 +198,8 @@ function getRenderLoadTier() {
 var renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'high-performance' });
 renderer.setClearColor(0x000000, 0);
 renderer.setPixelRatio(getRenderPixelRatio());
-renderer.setSize(innerWidth, innerHeight);
+// 第三个参数 false：不改 canvas 的 CSS 尺寸（仍由样式铺满容器），只设 drawing buffer
+renderer.setSize(renderSurfaceSize().width, renderSurfaceSize().height, false);
 renderer.domElement.style.background = 'transparent';
 renderer.domElement.style.display = 'block';
 renderer.domElement.style.width = '100%';

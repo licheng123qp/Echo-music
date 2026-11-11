@@ -406,8 +406,12 @@ function maybeTrimRuntimeCaches(now) {
 function applyRendererPowerMode() {
   if (typeof renderer === 'undefined' || !renderer) return;
   var deep = isDeepBackgroundMode();
-  var width = deep ? 4 : Math.max(1, innerWidth);
-  var height = deep ? 4 : Math.max(1, innerHeight);
+  // 用可见视口尺寸建 buffer（见 00-renderer-quality.js renderSurfaceSize 的说明）
+  var surface = (typeof renderSurfaceSize === 'function')
+    ? renderSurfaceSize()
+    : { width: Math.max(1, innerWidth), height: Math.max(1, innerHeight) };
+  var width = deep ? 4 : Math.max(1, surface.width);
+  var height = deep ? 4 : Math.max(1, surface.height);
   var pixelRatio = getRenderPixelRatio();
   var mode = deep ? 'sleep' : 'active';
   if (renderPowerState.mode === mode && renderPowerState.width === width && renderPowerState.height === height && Math.abs(renderPowerState.pixelRatio - pixelRatio) < 0.001) return;

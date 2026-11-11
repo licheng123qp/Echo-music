@@ -17,45 +17,59 @@
     //
     // 1vw 在固定宽度布局下恒等于「布局宽度的 1%」，排版与缩放共用一把尺子。
     (function () {
-      // 界面整体缩放比例（实测手感最优值）。想整体调大小只改这一个数。
-      var SCALE = 0.38;
+      // 基准缩放：0.38 是上游在手机上实测的手感值。
+      // 车机屏（领克 08 是 2560×1600）上这个比例明显偏小，所以再乘一个可调倍率，
+      // 默认车机 1.15、手机 1.0，用户可以在「声场」面板里改（存 localStorage）。
+      var BASE_SCALE = 0.38;
+      var ZOOM_KEY = 'mineradio-ui-zoom-v1';
+
+      /**
+       * 屏幕宽度（CSS 像素）。
+       * ★ 不能用 documentElement.clientWidth：
+       *   页面把布局视口设成「屏宽/SCALE」后，clientWidth 会变成布局宽（实测被夹到 10000），
+       *   再拿它除以 SCALE 会指数级放大，直到撞上浏览器的 10000 上限 —— 这既让界面错乱，
+       *   也把 3D 画布的 drawing buffer 撑到 5200×3250（车机上渲染开销直接翻几倍）。
+       * visualViewport 是唯一不受布局放大影响的尺寸来源。
+       */
+      function screenCssWidth() {
+        var vv = window.visualViewport;
+        if (vv && vv.width > 0 && vv.scale > 0) return vv.width * vv.scale;
+        var dpr = window.devicePixelRatio || 1;
+        var physical = (window.screen && window.screen.width) || window.innerWidth || 1;
+        return Math.max(1, physical / dpr);
+      }
+
+      /** 读取界面缩放倍率：0.85~1.6，未设置时车机给 1.15、手机给 1.0。 */
+      function readUiZoom() {
+        var raw = Number(localStorage.getItem(ZOOM_KEY));
+        if (raw >= 0.85 && raw <= 1.6) return raw;
+        return screenCssWidth() >= 900 ? 1.15 : 1.0;
+      }
+
+      var SCALE = BASE_SCALE * readUiZoom();
+
       function applyViewport() {
-        // ★ 基准宽度必须用「CSS 像素」的视口宽，不能用 window.screen.width。
-        //
-        // 原因：initial-scale 是拿「CSS 像素」去缩的，而
-        //   · Android WebView 的 window.screen.width 报的是**物理像素**（例：2640）；
-        //   · 视口宽（device-width）是 CSS 像素（例：960，= 2640 / dpr 2.75）。
-        // 若拿物理像素当基准：layoutW = 2640/0.38 = 6947，再 initial-scale=0.38
-        // → 画面实际宽 6947 × 0.38 = 2640 CSS px，而屏幕只有 960 CSS px
-        // → 内容比屏幕宽 2.75 倍，满屏溢出、按钮/排版全错位。
-        // 用 device-width（CSS px）当基准，两边才是同一把尺子：
-        //   layoutW = 960/0.38 = 2526，2526 × 0.38 = 960 ✔ 正好铺满。
-        //
-        // 取值的优选顺序就是「CSS 像素视口宽」优先：
-        //   documentElement.clientWidth（当前布局视口宽，meta 里 >= width=device-width）
-        //   → window.innerWidth → 最后才退到 screen.width（极个别 WebView 前两者报 0）
-        var vw = document.documentElement.clientWidth || window.innerWidth || 0;
-        var screenW = vw > 0 ? vw : Math.max(window.screen.width || 0, 1);
+        var screenW = screenCssWidth();
         var layoutW = Math.round(screenW / SCALE);
+        // 暴露给声场面板/自检脚本：布局宽与当前缩放，便于排查「面板为什么偏了」
+        window.__mrLayoutWidth = layoutW;
+        window.__mrVisualScale = SCALE;
         var meta = document.querySelector('meta[name="viewport"]');
         if (meta) {
-          // initial-scale 必须等于 SCALE，不能写 1.0。
-          // 写 1.0 就等于「按 1:1 渲染」，而布局宽度是 屏幕宽/SCALE（比屏幕宽得多），
-          // 结果内容直接溢出屏幕右侧、完全没有缩小 —— 这就是之前"怎么调都一样大"的原因。
-          // 写成 SCALE，浏览器才会把这块宽布局等比缩到正好铺满屏幕。
+          // initial-scale 必须等于 SCALE：布局宽度是 屏幕宽/SCALE（比屏幕宽），
+          // 只有按 SCALE 缩回来才正好铺满屏幕。
           meta.setAttribute('content',
             'width=' + layoutW
             + ', initial-scale=' + SCALE
             + ', maximum-scale=' + SCALE
             + ', user-scalable=no'
-            // viewport-fit=cover：刘海屏 / 挖孔屏上让页面铺满整块屏幕（含刘海那一块），
-            // 不写的话 WebView 会把内容限制在安全区内，顶部留一条黑边 —— 表现就是「有些机器无法全屏」。
             + ', viewport-fit=cover');
         }
       }
+
       // 第一次要尽早，避免先按 device-width 排一次再重排（会闪一下）
       applyViewport();
-      // 转屏 / 窗口尺寸变化时重算：横竖屏切换后布局宽度要跟着变
+      // 转屏 / 窗口尺寸变化时重算（此时 screenCssWidth 已经稳定，不会自激放大）
       window.addEventListener('resize', function () {
         applyViewport();
         window.scrollTo(0, 0);
@@ -65,6 +79,24 @@
       window.addEventListener('scroll', function () {
         if (window.scrollX !== 0) window.scrollTo(0, window.scrollY);
       }, { passive: true });
+
+      /**
+       * 设置整体界面缩放（0.85~1.6）。
+       * 声场面板调用；改完立刻重排，不需要重启。
+       */
+      window.__mrSetUiZoom = function (zoom) {
+        zoom = Number(zoom);
+        if (!(zoom >= 0.85 && zoom <= 1.6)) return;
+        try { localStorage.setItem(ZOOM_KEY, String(zoom)); } catch (e) { /* 存不下只影响下次启动 */ }
+        SCALE = BASE_SCALE * zoom;
+        applyViewport();
+        window.dispatchEvent(new Event('mineradio-ui-zoom'));
+      };
+
+      /** 读取当前界面缩放倍率（面板显示用）。 */
+      window.__mrGetUiZoom = function () {
+        return Math.round((SCALE / BASE_SCALE) * 1000) / 1000;
+      };
     })();
   </script>
   <title>Mineradio</title>

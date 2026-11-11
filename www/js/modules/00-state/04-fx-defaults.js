@@ -203,7 +203,8 @@ var fxDefaults = {
 function normalizeForegroundFpsMode(value) {
   var mode = String(value || '').trim().toLowerCase();
   if (mode === 'vsync' || mode === 'adaptive') return mode;
-  if (/^(45|60|75|90|120)$/.test(mode)) return mode;
+  // 30 是本项目新增的省电档（车机长时间运行时比 45 更省电，动效仍然够用）
+  if (/^(30|45|60|75|90|120)$/.test(mode)) return mode;
   return fxDefaults.foregroundFpsMode || 'vsync';
 }
 function foregroundFixedFpsForMode(mode) {

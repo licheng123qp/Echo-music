@@ -1,7 +1,12 @@
 // ============================================================
 function refreshMainRendererViewport(reason) {
   if (typeof camera !== 'undefined' && camera) {
-    camera.aspect = Math.max(1, innerWidth) / Math.max(1, innerHeight);
+    // 宽高比用可见视口：布局视口被放大后 innerWidth/innerHeight 虽然比值相同，
+    // 但统一用 renderSurfaceSize 能避免以后两处口径漂移
+    var surface = (typeof renderSurfaceSize === 'function')
+      ? renderSurfaceSize()
+      : { width: Math.max(1, innerWidth), height: Math.max(1, innerHeight) };
+    camera.aspect = surface.width / surface.height;
     camera.updateProjectionMatrix();
   }
   applyRendererPowerMode();

@@ -47,9 +47,12 @@ input → preGain → 左右分离 → 10 段 EQ（每声道独立）→ 平衡�
 
 | 指标 | 实测值 |
 | --- | --- |
-| `document.documentElement.clientWidth` | **10000**（被 Chrome 夹到上限） |
-| `visualViewport.width × scale` | 6736.8 × **0.38** |
+| 布局视口宽（`clientWidth`） | 5858（缩放 115% 时；上游 0.38 缩放下会一路涨到 Chrome 上限 10000） |
+| `visualViewport.scale` | **0.437**（= 0.38 × 1.15） |
 | 肉眼可见区域 | 2560 × 1600 |
+
+整体比例由 `index.html` 里的 `BASE_SCALE = 0.38` 乘一个可调倍率决定，默认**车机 115%、手机 100%**，
+面板里可以切 100% / 115% / 130%。
 
 也就是说 **`vw/vh` 是按 10000 算的，比可见区域大 2.6~9.7 倍**；`position: fixed` 的百分比同样按布局视口算。
 所以常见的 `width: 80vw; left: 50%` 写法在这个页面里会把面板放大并推到屏幕外。
@@ -66,7 +69,7 @@ input → preGain → 左右分离 → 10 段 EQ（每声道独立）→ 平衡�
 
 | 屏幕 | 布局 | 面板尺寸 | 预设按钮 | 滑杆触控高 | 越界 |
 | --- | --- | --- | --- | --- | --- |
-| 2560×1600（领克 08 车机） | 右侧抽屉 | 620×1440 | 59×56 | 56 | 无 |
+| 2560×1600（领克 08 车机，115%） | 右侧抽屉 | 692×1397 | 66×62 | 62 | 无 |
 | 1920×720 | 右侧抽屉 | 601×629 | 50×41 | 41 | 无 |
 | 1280×800 | 右侧抽屉 | 571×698 | 50×35 | 35 | 无 |
 | 393×873（手机竖屏） | 居中卡片 | 351×745 | 50×35 | 35 | 无 |
@@ -74,7 +77,32 @@ input → preGain → 左右分离 → 10 段 EQ（每声道独立）→ 平衡�
 > 复跑：`node tests/cdp-layout-audit.js http://127.0.0.1:8765/index.html 2560 1600 1`
 > （需要先 `python3 -m http.server 8765` 起静态服务，并让 headless Chromium 监听 9222 端口）。
 
-## 4. 构建
+## 4. 性能：3D 粒子为什么吃 CPU，以及怎么改的
+
+上游的 3D 舞台按 `innerWidth × innerHeight` 建 WebGL drawing buffer。问题在于本页面会把
+布局视口放大（见上一节），车机上 `innerWidth` 是 5858~10000，而肉眼只有 2560 ——
+等于把粒子渲染分辨率放大 3~4 倍：实测 drawing buffer 是 **5200×3250（1690 万像素）**，
+是屏幕像素的 6.6 倍，中端车机 GPU 直接被拖死。
+
+本项目的修法（`www/js/modules/01-scene/00-renderer-quality.js`）：
+
+1. 新增 `renderSurfaceSize()`，用 `visualViewport.width × scale` 得到**屏幕 CSS 像素**（2560×1600）；
+2. 像素预算、DPR 上限、drawing buffer 全部按这个尺寸算；
+3. `renderer.setSize()` 用新尺寸且 `updateStyle=false`，canvas 的 CSS 尺寸不变，只改 buffer。
+
+效果：
+
+| 指标 | 上游 | 本项目 |
+| --- | --- | --- |
+| drawing buffer | 5200×3250（16.9M 像素） | **1959×1224（2.4M 像素）** |
+| 相对屏幕过采样 | 6.6× | 0.96× |
+| 默认帧率 | 跟随屏幕（通常 60） | **45 FPS**（面板可切 30/45/60/跟随） |
+
+另外面板里提供「画质 低/中/高」与「帧率上限」两个开关，直接写上游的
+`setPerformanceQualityMode` / `setForegroundFpsMode`，和原 fx 面板同一份持久化。
+`30 FPS` 是本项目给 `normalizeForegroundFpsMode` 新增的档位（上游只支持 45 起）。
+
+## 5. 构建
 
 环境：JDK 17、Android SDK（compileSdk 34 / build-tools 34.0.0）、Node.js 18+。
 
@@ -102,7 +130,7 @@ keytool -genkeypair -v -keystore mineradio-soundfield.jks -alias mineradio \
 
 > 官方包与本包的签名不同，**不能覆盖安装**，需先卸载官方版（会丢官方版的本地设置）。
 
-## 5. 目录结构
+## 6. 目录结构
 
 ```
 www/                         Mineradio 安卓版 Web 前端（来自官方 APK v2.2.0）
@@ -118,7 +146,7 @@ tests/soundfield-engine-test.js     声场引擎离线自检（假 AudioContext�
 docs/                       设计文档
 ```
 
-## 6. 与原版安卓包的差异（重要）
+## 7. 与原版安卓包的差异（重要）
 
 | 项 | 状态 |
 | --- | --- |
@@ -128,14 +156,14 @@ docs/                       设计文档
 | 扫码登录 Cookie | 保存在原生进程内存，**重启应用后需重新登录** |
 | 官方版升级通道 | 不适用，本包不跟随官方版本号 |
 
-## 7. 已知限制
+## 8. 已知限制
 
 - 声场输出最终仍是立体声。车机若通过 HAL 自行上混，实际听感会叠加一次车机处理，建议对照「2.0 纯直通」调参。
 - HRTF 模式在低端车机上可能掉帧/爆音，默认使用等功率声像。
 - 声场链只在播放器建立音频图时挂载；如果出现「拖滑杆没反应」，先确认正在播放（面板底部会显示挂载状态）。
 - 面板强制按 `visualViewport` 布局，因此**不支持系统级「网页缩放」之外的手动捏合缩放**；车机上的 `maximum-scale=0.38` 也决定了这一点。
 
-## 8. 版权与许可
+## 9. 版权与许可
 
 - 本项目代码以 **GPL-3.0** 发布，见 [LICENSE](LICENSE)。
 - Mineradio 前端与品牌归原作者 **XxHuberrr** 所有（GPL-3.0）；本仓库是非官方衍生版，不代表原作者。

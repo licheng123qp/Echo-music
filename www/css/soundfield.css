@@ -273,6 +273,24 @@
     font-size: calc(var(--sf-fs) * .74);
 }
 
+/* ── 内联控件行（界面缩放 / 画质 / 帧率） ─────────────────── */
+.sf-inline-row {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--sf-k) * 10px);
+}
+
+.sf-inline-label {
+    flex: 0 0 auto;
+    min-width: calc(var(--sf-k) * 64px);
+    font-size: calc(var(--sf-fs) * .78);
+    color: rgba(255, 255, 255, .55);
+}
+
+.sf-inline-chips {
+    flex: 1;
+}
+
 /* ── 滑杆行 ───────────────────────────────────────────────── */
 .sf-row {
     display: flex;

@@ -93,6 +93,45 @@
     dom.vehicleNote = el('div', { className: 'sf-note' }, '');
     body.appendChild(dom.vehicleNote);
 
+    // ── 界面与性能 ──────────────────────────────────────────
+    // 车机上「界面大小 / 画质 / 帧率」是最先要调的三项，藏在上游 fx 面板里要点三层，
+    // 实际不会有人去调，所以合并到声场面板里。
+    body.appendChild(el('div', { className: 'sf-section-label' }, '界面与性能'));
+
+    /** 生成一行「标题 + 单选 chip 组」，返回 chip 容器。 */
+    function addChipRow(title, items, attr) {
+      var wrap = el('div', { className: 'sf-inline-row' });
+      wrap.appendChild(el('span', { className: 'sf-inline-label' }, title));
+      var row = el('div', { className: 'sf-chips sf-chips-sm sf-inline-chips' });
+      items.forEach(function (item) {
+        var attrs = { className: 'sf-chip', type: 'button' };
+        attrs[attr] = item.value;
+        row.appendChild(el('button', attrs, item.label));
+      });
+      wrap.appendChild(row);
+      body.appendChild(wrap);
+      return row;
+    }
+
+    dom.zoomRow = addChipRow('界面缩放', [
+      { value: '1', label: '100%' },
+      { value: '1.15', label: '115%' },
+      { value: '1.3', label: '130%' },
+    ], 'data-zoom');
+
+    dom.qualityRow = addChipRow('画质', [
+      { value: 'eco', label: '低' },
+      { value: 'balanced', label: '中' },
+      { value: 'high', label: '高' },
+    ], 'data-quality');
+
+    dom.fpsRow = addChipRow('帧率上限', [
+      { value: '30', label: '30' },
+      { value: '45', label: '45' },
+      { value: '60', label: '60' },
+      { value: 'vsync', label: '跟随屏幕' },
+    ], 'data-fps');
+
     // ── 预设 ────────────────────────────────────────────────
     body.appendChild(el('div', { className: 'sf-section-label' }, '声场预设'));
     dom.presetRow = el('div', { className: 'sf-chips', id: 'sf-presets' });
@@ -189,6 +228,7 @@
 
     // 先按可见视口钉住根节点，再绑事件：否则面板会按 10000px 宽的布局视口居中，跑到屏幕外
     layoutRoot();
+    applyCarPerformanceDefaults();
     bindEvents();
     refresh(engine.getParams());
   }
@@ -232,13 +272,15 @@
     dom.root.style.top = m.top + 'px';
     dom.root.style.width = m.width + 'px';
     dom.root.style.height = m.height + 'px';
-    dom.root.style.setProperty('--sf-k', String(1 / scale));
+    // 面板跟着「界面缩放」一起放大：否则整页放大 15% 后声场面板会显得明显偏小
+    var zoom = (typeof window.__mrGetUiZoom === 'function') ? window.__mrGetUiZoom() : 1;
+    dom.root.style.setProperty('--sf-k', String(zoom / scale));
     // 字号与触控高度按屏幕宽度分档：领克 08 车机 2560 宽 → 20px / 56px；
     // 手机 393 宽 → 15px / 36px。车机上手指更远、屏幕更大，控件必须跟着变大。
     var fontPx = Math.min(21, Math.max(15, screenWidth * 0.0078));
     var tapPx = Math.min(56, Math.max(36, screenWidth * 0.022));
-    dom.root.style.setProperty('--sf-fs', (fontPx / scale) + 'px');
-    dom.root.style.setProperty('--sf-tap', (tapPx / scale) + 'px');
+    dom.root.style.setProperty('--sf-fs', ((fontPx * zoom) / scale) + 'px');
+    dom.root.style.setProperty('--sf-tap', ((tapPx * zoom) / scale) + 'px');
     // 可见视口宽高比 ≥ 1.45 视为横屏（领克 08 车机 16:10 = 1.6），面板改右侧抽屉
     dom.root.classList.toggle('sf-drawer', (m.width / Math.max(1, m.height)) >= 1.45);
   }
@@ -297,6 +339,19 @@
       if (!cell) return;
       cell.input.value = String(gain);
       cell.value.textContent = gain > 0 ? '+' + gain : String(gain);
+    });
+
+    // 界面缩放 / 画质 / 帧率：读应用侧真实状态，避免面板显示与生效值不一致
+    var zoomNow = (typeof window.__mrGetUiZoom === 'function') ? window.__mrGetUiZoom() : 1;
+    markChipActive(dom.zoomRow, function (chip) {
+      return Math.abs(Number(chip.getAttribute('data-zoom')) - zoomNow) < 0.01;
+    });
+    var fxNow = window.fx || {};
+    markChipActive(dom.qualityRow, function (chip) {
+      return chip.getAttribute('data-quality') === (fxNow.performanceQuality || 'eco');
+    });
+    markChipActive(dom.fpsRow, function (chip) {
+      return chip.getAttribute('data-fps') === (fxNow.foregroundFpsMode || 'vsync');
     });
 
     dom.modeBtn.textContent = params.mode === 'hrtf' ? '声像：HRTF' : '声像：等功率';
@@ -368,6 +423,36 @@
       });
     });
 
+    // 界面缩放：调用 index.html 暴露的接口，改完立刻重排整页
+    dom.zoomRow.addEventListener('click', function (e) {
+      var chip = e.target.closest('[data-zoom]');
+      if (!chip || typeof window.__mrSetUiZoom !== 'function') return;
+      window.__mrSetUiZoom(Number(chip.getAttribute('data-zoom')));
+      setTimeout(function () {
+        layoutRoot();
+        refresh(engine.getParams());
+      }, 120);
+    });
+
+    // 画质：调上游的 setPerformanceQualityMode，保证和 fx 面板同一条持久化路径
+    dom.qualityRow.addEventListener('click', function (e) {
+      var chip = e.target.closest('[data-quality]');
+      if (!chip || typeof setPerformanceQualityMode !== 'function') return;
+      setPerformanceQualityMode(chip.getAttribute('data-quality'), true);
+      refresh(engine.getParams());
+    });
+
+    // 帧率上限：车机上固定 45 通常比跟随 60 明显省电，画面几乎看不出差别
+    dom.fpsRow.addEventListener('click', function (e) {
+      var chip = e.target.closest('[data-fps]');
+      if (!chip || typeof setForegroundFpsMode !== 'function') return;
+      setForegroundFpsMode(chip.getAttribute('data-fps'), true);
+      refresh(engine.getParams());
+    });
+
+    // 整页重排后（缩放变化）面板要重新钉回可见视口
+    window.addEventListener('mineradio-ui-zoom', function () { setTimeout(layoutRoot, 60); });
+
     dom.modeBtn.addEventListener('click', function () {
       var params = engine.getParams();
       refresh(engine.patch({ mode: params.mode === 'hrtf' ? 'equalpower' : 'hrtf' }));
@@ -391,6 +476,34 @@
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', layoutRoot);
       window.visualViewport.addEventListener('scroll', layoutRoot);
+    }
+  }
+
+  /** 按条件给 chip 组打高亮（没有匹配项时全部取消）。 */
+  function markChipActive(row, predicate) {
+    if (!row) return;
+    Array.prototype.forEach.call(row.children, function (chip) {
+      chip.classList.toggle('sf-active', !!predicate(chip));
+    });
+  }
+
+  /**
+   * 首次启动的车机性能默认值。
+   * 只动「还是上游默认值」的项：用户自己调过 fps 就不覆盖。
+   * 画质保持上游默认的 eco；这里把帧率从「跟随屏幕」降到 45 ——
+   * 车机上 45fps 与 60fps 的粒子观感差异很小，但每帧的 CPU 开销少 25%。
+   */
+  function applyCarPerformanceDefaults() {
+    var MARKER = 'mineradio-soundfield-perf-v1';
+    try {
+      if (localStorage.getItem(MARKER)) return;
+      localStorage.setItem(MARKER, '1');
+    } catch (e) {
+      return;
+    }
+    var fxNow = window.fx || {};
+    if (typeof setForegroundFpsMode === 'function' && (!fxNow.foregroundFpsMode || fxNow.foregroundFpsMode === 'vsync')) {
+      setForegroundFpsMode('45', true);
     }
   }
 
