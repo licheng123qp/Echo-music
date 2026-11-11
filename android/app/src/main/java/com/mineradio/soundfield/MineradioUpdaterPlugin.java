@@ -44,6 +44,11 @@ public class MineradioUpdaterPlugin extends Plugin {
     private final android.os.Handler progressHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private Runnable progressTask;
 
+    /** 停滞检测用的基线：多久没收到新字节就判定为卡死。 */
+    private static final long STALL_TIMEOUT_MS = 90_000;
+    private long lastReceivedBytes = 0;
+    private long lastProgressAt = 0;
+
     /** 下载完成后要安装的文件。 */
     private File pendingFile;
 
@@ -156,6 +161,8 @@ public class MineradioUpdaterPlugin extends Plugin {
      */
     private void startProgressPolling(final DownloadManager manager) {
         stopProgressPolling();
+        lastReceivedBytes = 0;
+        lastProgressAt = System.currentTimeMillis();
         progressTask = new Runnable() {
             @Override
             public void run() {
@@ -174,15 +181,35 @@ public class MineradioUpdaterPlugin extends Plugin {
                 } catch (Exception ignored) {
                     // 查询失败就停一轮，下一轮再试
                 }
+                // ★ 完成判定放在轮询里，不依赖广播：
+                //   DownloadManager 的完成广播由系统进程发出，Android 13+ 用 RECEIVER_NOT_EXPORTED
+                //   注册会收不到，前端就会一直停在「下载中」。轮询是同一份数据，最可靠。
+                if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                    completeDownload();
+                    return;
+                }
+                if (status == DownloadManager.STATUS_FAILED) {
+                    failDownload("下载失败（系统状态 " + status + "），请检查网络后重试");
+                    return;
+                }
+
+                // 停滞检测：车机网络断开时状态会一直是 RUNNING、字节不再增长
+                long now = System.currentTimeMillis();
+                if (received > lastReceivedBytes) {
+                    lastReceivedBytes = received;
+                    lastProgressAt = now;
+                }
+                if (lastProgressAt > 0 && now - lastProgressAt > STALL_TIMEOUT_MS) {
+                    failDownload("下载超时：90 秒没有收到数据，请检查网络后重试，或打开发布页手动下载");
+                    return;
+                }
+
                 JSObject payload = new JSObject();
                 payload.put("received", received);
                 payload.put("total", total);
                 payload.put("percent", total > 0 ? Math.round(received * 1000.0 / total) / 10.0 : -1);
                 notifyListeners("progress", payload);
-
-                if (status == DownloadManager.STATUS_RUNNING || status == DownloadManager.STATUS_PENDING) {
-                    progressHandler.postDelayed(this, 500);
-                }
+                progressHandler.postDelayed(this, 500);
             }
         };
         progressHandler.post(progressTask);
@@ -231,49 +258,64 @@ public class MineradioUpdaterPlugin extends Plugin {
             @Override
             public void onReceive(Context context, Intent intent) {
                 long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
-                if (id != downloadId) return;
-
-                stopProgressPolling();
-                PluginCall call = pendingCall;
-                pendingCall = null;
-                long finishedId = downloadId;
-                downloadId = -1;
-
-                // 广播只说明「任务结束」，成功还是失败要查 DownloadManager
-                DownloadManager.Query query = new DownloadManager.Query().setFilterById(finishedId);
-                int status = DownloadManager.STATUS_FAILED;
-                try (android.database.Cursor cursor = manager.query(query)) {
-                    if (cursor != null && cursor.moveToFirst()) {
-                        status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
-                    }
-                } catch (Exception ignored) {
-                    // 查询失败按失败处理，避免前端一直转圈
-                }
-
-                if (call == null) return;
+                if (id <= 0 || id != downloadId) return;
+                // 拿到广播再查一次状态，避免和轮询互相抢先
+                int status = queryStatus(manager, id);
                 if (status == DownloadManager.STATUS_SUCCESSFUL) {
-                    File file = pendingFile;
-                    JSObject result = new JSObject();
-                    result.put("status", "completed");
-                    result.put("path", file != null ? file.getAbsolutePath() : "");
-                    // 安装器打不开不算下载失败：把错误回传给前端提示「手动安装」，
-                    // 但一次调用只能有一个结果，所以先装、再一次性 resolve。
-                    if (file != null && file.exists()) {
-                        try {
-                            launchInstaller(file);
-                        } catch (Exception e) {
-                            result.put("installError", String.valueOf(e.getMessage()));
-                        }
-                    }
-                    call.resolve(result);
-                } else {
-                    call.reject("下载失败（状态码 " + status + "）");
+                    completeDownload();
+                } else if (status == DownloadManager.STATUS_FAILED) {
+                    failDownload("下载失败（系统状态 " + status + "）");
                 }
             }
         };
         IntentFilter filter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
-        // RECEIVER_NOT_EXPORTED：Android 13+ 强制要求声明导出性；系统下载完成广播仍能收到
-        ContextCompat.registerReceiver(getContext(), downloadReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
+        // ★ 必须 EXPORTED：完成广播来自系统 DownloadProvider（不同 UID），
+        //   NOT_EXPORTED 会静默丢弃，表现为前端永远「下载中」。
+        ContextCompat.registerReceiver(getContext(), downloadReceiver, filter, ContextCompat.RECEIVER_EXPORTED);
+    }
+
+    /** 查一次下载状态；查不到按失败处理。 */
+    private int queryStatus(DownloadManager manager, long id) {
+        DownloadManager.Query query = new DownloadManager.Query().setFilterById(id);
+        try (android.database.Cursor cursor = manager.query(query)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                return cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
+            }
+        } catch (Exception ignored) {
+            // 落到下面的失败分支
+        }
+        return DownloadManager.STATUS_FAILED;
+    }
+
+    /** 下载完成：回复前端并调起安装器。 */
+    private void completeDownload() {
+        PluginCall call = pendingCall;
+        pendingCall = null;
+        downloadId = -1;
+        stopProgressPolling();
+        if (call == null) return;
+        File file = pendingFile;
+        JSObject result = new JSObject();
+        result.put("status", "completed");
+        result.put("path", file != null ? file.getAbsolutePath() : "");
+        if (file != null && file.exists()) {
+            try {
+                launchInstaller(file);
+            } catch (Exception e) {
+                // 安装器打不开不算下载失败：前端据此提示「手动安装」
+                result.put("installError", String.valueOf(e.getMessage()));
+            }
+        }
+        call.resolve(result);
+    }
+
+    /** 下载失败/超时：结束挂起调用，让前端显示错误与兜底按钮。 */
+    private void failDownload(String message) {
+        PluginCall call = pendingCall;
+        pendingCall = null;
+        downloadId = -1;
+        stopProgressPolling();
+        if (call != null) call.reject(message);
     }
 
     @Override

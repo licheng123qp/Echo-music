@@ -534,9 +534,15 @@
         }
       } catch (e) {
         dom.updateStatus.textContent = '下载失败：' + (e && e.message ? e.message : '未知错误');
+        // 失败后把按钮切成「打开发布页面」，车机网络拉不动 GitHub 时还有条退路
+        dom.downloadBtn.setAttribute('data-update-action', 'page');
+        dom.downloadBtn.textContent = '打开发布页面';
       } finally {
         dom.downloadBtn.disabled = false;
-        dom.downloadBtn.textContent = original;
+        // 成功/失败都已改写文案时不要再覆盖回去
+        if (!dom.downloadBtn.getAttribute('data-update-action') || dom.downloadBtn.getAttribute('data-update-action') === 'download') {
+          dom.downloadBtn.textContent = original;
+        }
       }
     });
 
